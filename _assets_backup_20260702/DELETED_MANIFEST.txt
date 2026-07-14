@@ -1,0 +1,64 @@
+﻿new assets\main bg\blue pour machine.png
+new assets\main bg\check button.webp
+new assets\main bg\EMPTY GLASS.png
+new assets\main bg\GAME BG.svg
+new assets\main bg\LEMON BOX.webp
+new assets\main bg\pink pour machine.webp
+new assets\main bg\pour buttone.webp
+new assets\main bg\Strow box.webp
+new assets\main bg\TEXT BOX.png
+new assets\main bg\TRAY.webp
+new assets\ChatGPT Image Jun 21, 2026, 04_04_32 AM.png
+new assets\coin.svg
+new assets\dailoge box.webp
+new assets\dragon text box.svg
+new assets\Dragon.webp
+new assets\full glass strow.webp
+new assets\ghost  (1).png
+new assets\ghost with glass.webp
+new assets\ghost.webp
+new assets\half glass lemon.svg
+new assets\hand nudge.webp
+new assets\image.png
+new assets\new bg.svg
+new assets\pink full glass complete.png
+new assets\pink full glass complete.webp
+new assets\pink full glass with strow.png
+new assets\pink half glass complete.png
+new assets\pink half glass complete.webp
+new assets\strow.webp
+new assets\svg.svg
+new assets\YUV.BG.webp
+assets map\1.seen.svg
+assets map\BG.png
+assets map\client 1.svg
+assets map\client 3.webp
+assets map\client 4.png
+assets map\client 5.png
+assets map\client 6.svg
+assets map\client1-counter.png
+assets map\client1-scene.png
+assets map\client1.webp
+assets map\client4-sprite.webp
+assets map\client5-sprite.png
+assets map\client5-sprite.webp
+assets map\client6-sprite.png
+assets map\client6-sprite.webp
+assets map\counter-overlay.png
+assets map\dragon-client.png
+assets map\Frame 121.svg
+assets map\Frame 125.svg
+assets map\game thumbnail.svg
+assets map\game thumbnail.webp
+assets map\ghost,glass.png
+assets map\glass.png
+assets map\goblin-client.png
+assets map\intro-bg.png
+assets map\maint.svg
+assets map\mummy-client.png
+assets map\POST LBD.svg
+assets map\pour machine.png
+assets map\Slide 16_9 - 73.png
+assets map\text box.png
+assets map\vampire-client.png
+assets map\wolf-client.png
