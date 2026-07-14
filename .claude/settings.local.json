@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "PowerShell($f = \"c:\\\\Users\\\\ys330\\\\Downloads\\\\1ST GAME\\\\assets map\\\\Frame 121.svg\"; $c = Get-Content $f -Raw; \"LENGTH: $\\($c.Length\\)\"; \"--- first 1500 chars ---\"; $c.Substring\\(0, [Math]::Min\\(1500, $c.Length\\)\\))"
+      "PowerShell($f = \"c:\\\\Users\\\\ys330\\\\Downloads\\\\1ST GAME\\\\assets map\\\\Frame 121.svg\"; $c = Get-Content $f -Raw; \"LENGTH: $\\($c.Length\\)\"; \"--- first 1500 chars ---\"; $c.Substring\\(0, [Math]::Min\\(1500, $c.Length\\)\\))",
+      "PowerShell(\"---\")"
     ]
   }
 }
