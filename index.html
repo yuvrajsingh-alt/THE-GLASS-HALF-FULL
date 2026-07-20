@@ -166,6 +166,13 @@ body {
   0%   { transform: translateX(0)    rotate(0deg); opacity: 1; }
   100% { transform: translateX(115%) rotate(8deg); opacity: 0; }
 }
+/* mid-game hint (2+ wrong Check attempts): the dragon briefly slides back in
+   to its resting spot to give a pour-count tip, then leaves again via .exitRight */
+#dragon.hintIn { animation: dragonHintIn 0.8s ease-out both; }
+@keyframes dragonHintIn {
+  0%   { transform: translateX(115%) rotate(8deg); opacity: 0; }
+  100% { transform: translateX(0)    rotate(0deg); opacity: 1; }
+}
 
 /* ── dragon's speech bubble (CSS-drawn so it sizes cleanly to any text) ── */
 #dragonBubble {
@@ -280,6 +287,8 @@ body {
   width: 100%; height: 100%;
   filter: drop-shadow(0 8px 18px rgba(0,0,0,0.3));
 }
+/* same attention-glow as #thought — used for the 2+ wrong-Check hint in customer mode */
+#thought2.glow #thoughtBg2, #thought3.glow #thoughtBg3 { animation: thoughtGlow 0.9s ease-in-out infinite; }
 #thoughtInner2, #thoughtInner3 {
   position: absolute;
   left: 0; top: 0;
@@ -1569,6 +1578,64 @@ function dragonExit() {
   playSplashTransition();                              // pink juice-splash wipe into customer mode
 }
 
+// ── 2+ wrong-Check hint: customer bubble glows → the dragon pops back in with a
+// pour-count tip → the dragon leaves again → a hand nudge guides the next pour.
+// Works in both solo rounds and customer/pair mode (the dragon may already be
+// "gone" for good in pair mode — this brings it back just for the one line).
+let wrongCheckCount = 0;
+let hintActive = false;   // true while the wrong-hint sequence runs → suppresses every other hand cue
+function triggerWrongHint(target, bubbleEl) {
+  if (!bubbleEl || !dragonEl || hintActive) return;   // don't stack if one is already running
+  hintActive = true;
+  hideHand();             // no hand anywhere while the dragon does its thing
+
+  // 1) glow the customer's order bubble to draw attention
+  bubbleEl.classList.remove('glow'); void bubbleEl.offsetWidth; bubbleEl.classList.add('glow');
+  setTimeout(() => bubbleEl.classList.remove('glow'), 2000);
+
+  // 2) shortly after, the dragon slides fully into view first —
+  // (phase is still 'done' here — tryAgain() only flips it back to 'play' a bit
+  // later — so only bail if the round itself has actually moved on/ended)
+  setTimeout(() => {
+    if (phase === 'gameover' || phase === 'intro') { hintActive = false; return; }   // round ended/reset
+    const wasGone = dragonGone;
+    unfreezeDragon();
+    dragonEl.classList.remove('exitRight');
+    dragonEl.style.display = '';
+    void dragonEl.offsetWidth;
+    dragonEl.classList.add('hintIn');
+
+    // 3) only once the dragon has FULLY arrived does its dialogue box appear
+    setTimeout(() => {
+      if (phase === 'gameover' || phase === 'intro') {          // round ended mid-slide — bail cleanly
+        dragonEl.classList.remove('hintIn'); dragonEl.style.display = 'none'; dragonGone = wasGone; hintActive = false; return;
+      }
+      dragonGone = false;                               // now let the line show its bubble + voice
+      hideHand();                                       // belt-and-braces: no stray hand during the line
+      pourBtn.disabled = true;                          // keep POUR locked so the line can't be cut short
+      const line = target === 'full' ? 'Tap the Pour button 4 times.' : 'Tap the Pour button 2 times.';
+      // typeBanner's 3rd arg fires only AFTER the whole line has been delivered (typed + read)
+      typeBanner(line, null, () => {
+        // 4) dialogue fully delivered → brief beat, THEN the dragon leaves the screen
+        setTimeout(() => {
+          if (bannerEl) bannerEl.classList.remove('show');   // dismiss the bubble as the dragon departs
+          unfreezeDragon();                                  // hide the freeze-canvas so the LIVE image slides out
+          dragonEl.classList.remove('hintIn');
+          dragonEl.classList.add('exitRight');
+          setTimeout(() => {
+            if (dragonEl) { dragonEl.classList.remove('exitRight'); dragonEl.style.display = 'none'; }
+            unfreezeDragon();                                // belt-and-braces: ensure no frozen dragon lingers
+            dragonGone = wasGone;
+            hintActive = false;
+            // 5) only after the dragon has fully exited does the hand hint appear
+            if (phase === 'play') { pourBtn.disabled = false; showPourHand(); if (pairMode) armPourNudge(); }
+          }, 1000);
+        }, 500);   // reading beat after the line is complete
+      });
+    }, 800);   // matches the #dragon.hintIn slide-in duration (0.8s)
+  }, 900);
+}
+
 let actx = null;
 function beep(freq, dur, type) {
   try {
@@ -1785,6 +1852,7 @@ function splashSound() {
 function initRound() {
   const r = ROUNDS[level];
   fillPct = 0; hasPoured = false; phase = 'intro';
+  wrongCheckCount = 0; hintActive = false;   // fresh round → reset the wrong-attempt streak + hint
   tutorial = (r.skin === 'ghost');   // full hand-guided walkthrough for the ghost
   if (bannerEl) bannerEl.classList.remove('show');   // dragon's bubble appears when it speaks
   // a fresh tutorial run (rounds loop back to the ghost) brings the host dragon back
@@ -1913,9 +1981,41 @@ function startGame() {
 // hand positions for each guided step
 function placeHand()       { moveHand('22%', '69%'); }     // POUR button
 function handToCheck()     { if (phase !== 'play') return; moveHand('61%', '90%'); }   // Check button (never after Check was pressed)
-function handToStrawBox()  { moveHand('50%', '60%'); }     // straw box
-function handToLemonBox()  { moveHand('70%', '60%'); }     // lemon box
+// centre the hand nudge exactly on a target element (measured live → exact at any size)
+// `force` shows the hand without a dialogue line (used by the idle nudges)
+function handToCenterOf(el, force) {
+  if (!force && !cueVisible()) { hideHand(); return; }
+  const gr = gcEl.getBoundingClientRect();
+  const b  = el.getBoundingClientRect();
+  handEl.classList.remove('dragHint');
+  handEl.style.display = 'block';                    // show first so the hand's size is measurable
+  const hw = handEl.offsetWidth, hh = handEl.offsetHeight;
+  handEl.style.left = ((b.left + b.width  / 2 - gr.left - hw / 2) / gr.width  * 100) + '%';
+  handEl.style.top  = ((b.top  + b.height / 2 - gr.top  - hh / 2) / gr.height * 100) + '%';
+}
+function handToStrawBox()  { handToCenterOf(strawBox); }   // straw box — hand dead-centre
+function handToLemonBox()  { handToCenterOf(lemonBox); }   // lemon box — hand dead-centre
 function handToDrag()      { moveHand('60%', '74%', true); } // drag the glass → customer
+
+// ── straw/lemon idle nudge (solo + customer modes) ──────────────
+// If the player hasn't tapped a box ~8–10s after the glass lands on the tray,
+// glow+pulse the straw box first (with the hand centred on it); once the straw
+// is added, the same idle window re-arms to guide them to the lemon box next.
+// The tutorial is excluded — it already guides each step immediately.
+const BOX_IDLE_MS = 9000;
+let boxIdleTimer = null;
+function armBoxIdleNudge() {
+  cancelBoxIdleNudge();
+  if (tutorial || !servedSet || (strawAdded && lemonAdded)) return;
+  boxIdleTimer = setTimeout(() => {
+    if (!servedSet || tutorial) return;
+    if (!strawAdded)      { strawBox.classList.add('glow'); handToCenterOf(strawBox, true); }
+    else if (!lemonAdded) { lemonBox.classList.add('glow'); handToCenterOf(lemonBox, true); }
+  }, BOX_IDLE_MS);
+}
+function cancelBoxIdleNudge() {
+  if (boxIdleTimer) { clearTimeout(boxIdleTimer); boxIdleTimer = null; }
+}
 
 // ── pour ──────────────────────────────────────────────────────
 function pour() {
@@ -2151,6 +2251,7 @@ function serveToTray() {
       // solo rounds (full or half): either box may be tapped first — enable BOTH
       strawBox.style.pointerEvents = 'auto';
       lemonBox.style.pointerEvents = 'auto';
+      armBoxIdleNudge();   // idle ~9s with no tap → glow + hand nudge on the straw box first
     }
   }, 950);
 }
@@ -2222,6 +2323,7 @@ function compositeAdd(which) {            // which = 'straw' | 'lemon'
 function addStrawToServed() {
   if (strawAdded || !servedSet) return;
   strawAdded = true;
+  cancelBoxIdleNudge();             // player acted — drop any pending idle nudge
   hideHand();                       // straw tapped — clear the straw-box hand cue
   strawBox.classList.remove('glow');
   strawBox.style.pointerEvents = 'none';
@@ -2240,6 +2342,8 @@ function addStrawToServed() {
           handToLemonBox();
         });
       }, 250);
+    } else if (!lemonAdded) {
+      armBoxIdleNudge();            // solo/pair: re-arm — idle ~9s more → nudge the lemon box next
     }
   });
 }
@@ -2250,6 +2354,7 @@ function addLemonToServed() {
   if (lemonAdded || !servedSet) return;
   if (tutorial && !strawAdded) return;   // tutorial forces straw-first (guided); solo allows either box first
   lemonAdded = true;
+  cancelBoxIdleNudge();             // player acted — drop any pending idle nudge
   hideHand();                       // lemon tapped — clear the lemon-box hand cue
   lemonBox.classList.remove('glow');
   lemonBox.style.pointerEvents = 'none';
@@ -2259,11 +2364,13 @@ function addLemonToServed() {
   flyToGlass('new assets/lemon.svg', lemonBox, () => {
     if (!servedSet) return;
     compositeAdd('lemon');
+    if (!strawAdded && !tutorial) armBoxIdleNudge();   // lemon-first: re-arm to nudge the straw box next
   });
 }
 
 function clearServed() {
   hideDragGhost();
+  cancelBoxIdleNudge();
   if (servedSet) { servedSet.remove(); servedSet = null; }
   strawBox.classList.remove('glow'); strawBox.style.pointerEvents = 'none';
   lemonBox.classList.remove('glow'); lemonBox.style.pointerEvents = 'none';
@@ -2423,6 +2530,7 @@ function onSuccess(r) {
       : 'Yay! You poured a Half Full glass. 🎉');
   }
   try { bonusSound.currentTime = 0; bonusSound.play().catch(() => {}); } catch (e) {}   // correct! bonus sound
+  wrongCheckCount = 0;             // fresh order → the wrong-attempt streak resets
 
   clientEl.classList.remove('cheer');
   void clientEl.offsetWidth;
@@ -2443,6 +2551,8 @@ function onFail(r) {
   glassEl.classList.add('wrong');     // red glow + shake
   typeBanner(r.target === 'full' ? 'Uh-oh! Is the glass Full? 🤔'
                                  : 'Uh-oh! Is the glass Half Full? 🤔');
+  wrongCheckCount++;
+  if (wrongCheckCount >= 2) triggerWrongHint(r.target, thoughtEl);   // 2+ wrong → glow bubble, dragon tip, hand
   setTimeout(tryAgain, 2200);
 }
 
@@ -2452,6 +2562,10 @@ function tryAgain() {
   setJuice(0);
   checkBtn.style.display = 'none';   // hidden again until they pour
   checkBtn.disabled = true;
+  // while the wrong-hint is playing, the hint owns POUR + the hand: keep pouring
+  // LOCKED so the dragon can finish its line uninterrupted, and don't cue a hand.
+  // The hint re-enables POUR and shows the hand once the dragon has fully exited.
+  if (hintActive) { pourBtn.disabled = true; return; }
   pourBtn.disabled = false;          // re-enable pouring immediately
   if (pairMode) armPourNudge(); else showPourHand();   // customer mode: nudge only after ~11s idle
 }
@@ -2618,6 +2732,7 @@ function startPair() {
   pairMode = true;
   phase = 'play';
   servedLevel = null;
+  wrongCheckCount = 0; hintActive = false;   // fresh cycle → reset the wrong-attempt streak + hint
   spawnCount = 0;
   queue = [];
   busyLanes = [];
@@ -2653,11 +2768,17 @@ function checkPair() {
     // wrong order (or ambiguous fill) → don't place it; red-glow error shake, then re-pour
     playWrongSound();
     glassEl.classList.remove('wrong'); void glassEl.offsetWidth; glassEl.classList.add('wrong');
+    wrongCheckCount++;
+    if (wrongCheckCount >= 2 && active) {
+      const bubbleEl = document.getElementById(LANES[active.lane].bubbleId);
+      triggerWrongHint(want, bubbleEl);   // 2+ wrong → glow bubble, dragon tip, hand
+    }
     setTimeout(tryAgain, 1500);
     return;
   }
   // correct → stars burst on the machine glass, it glows, then flies onto the tray
   servedLevel = lvl;
+  wrongCheckCount = 0;             // fresh order → the wrong-attempt streak resets
   try { bonusSound.currentTime = 0; bonusSound.play().catch(() => {}); } catch (e) {}
   glassEl.classList.remove('wrong');
   void glassEl.offsetWidth;
@@ -2725,6 +2846,7 @@ function dropOnPair(e) {
 function discardDrinkAndRepour() {
   playWrongSound();
   if (servedSet) servedSet.classList.add('wrongDrop');
+  cancelBoxIdleNudge();
   setTimeout(() => {
     if (servedSet) { servedSet.remove(); servedSet = null; }
     strawBox.classList.remove('glow'); strawBox.style.pointerEvents = 'none';
