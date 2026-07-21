@@ -786,6 +786,59 @@ body {
   100% { transform: translate(var(--dx,0), 115vh) rotate(720deg) rotateX(540deg); opacity: 0.9; }
 }
 
+/* ── preloader (covers everything until all visual assets are cached) ── */
+#loader {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3.2vh;
+  background: radial-gradient(circle at 50% 40%, #2a0f3a 0%, #15071f 70%);
+  color: #fff;
+  transition: opacity 0.5s ease;
+}
+#loader.done { opacity: 0; pointer-events: none; }
+#loaderLogo {
+  font-family: 'Baloo 2', system-ui, sans-serif;
+  font-weight: 800;
+  font-size: clamp(28px, 7vw, 64px);
+  color: #F77ADE;
+  text-shadow: 0 4px 0 #B8156F, 0 8px 18px rgba(0,0,0,0.5);
+  letter-spacing: 0.02em;
+}
+#loaderSpinner {
+  width: clamp(44px, 9vw, 72px);
+  height: clamp(44px, 9vw, 72px);
+  border: clamp(5px, 1vw, 8px) solid rgba(255,255,255,0.18);
+  border-top-color: #F77ADE;
+  border-radius: 50%;
+  animation: loaderSpin 0.9s linear infinite;
+}
+@keyframes loaderSpin { to { transform: rotate(360deg); } }
+#loaderBarWrap {
+  width: min(60vw, 420px);
+  height: clamp(10px, 2vh, 16px);
+  background: rgba(255,255,255,0.14);
+  border-radius: 999px;
+  overflow: hidden;
+}
+#loaderBar {
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #B8156F, #F77ADE);
+  transition: width 0.25s ease;
+}
+#loaderPct {
+  font-family: system-ui, sans-serif;
+  font-size: clamp(13px, 2.4vw, 18px);
+  color: rgba(255,255,255,0.75);
+  letter-spacing: 0.08em;
+}
+
 /* ── title screen ── */
 #title {
   position: absolute;
@@ -926,6 +979,14 @@ body {
 </style>
 </head>
 <body>
+
+<!-- preloader: shown until every visual asset is fetched into cache, then fades out -->
+<div id="loader" aria-label="Loading">
+  <div id="loaderLogo">Ready Set Serve!</div>
+  <div id="loaderSpinner"></div>
+  <div id="loaderBarWrap"><div id="loaderBar"></div></div>
+  <div id="loaderPct">0%</div>
+</div>
 
 <!-- rotate-to-landscape prompt (portrait only; see #rotate CSS) -->
 <div id="rotate" aria-hidden="true">
@@ -1171,8 +1232,47 @@ const PRELOAD_ASSETS = [
   'new assets/main bg/pour buttone.svg',
   'new assets/hand nudge.svg'
 ];
-// keep the Image objects referenced so they aren't garbage-collected before they finish loading
-const _preloadedImages = PRELOAD_ASSETS.map(src => { const im = new Image(); im.src = src; return im; });
+// Load every asset up front and gate the game behind a loading screen: the title/Play
+// button only appears once all of them are cached, so nothing pops in or flashes mid-play.
+// Each image is kept referenced (in _preloadedImages) so it isn't GC'd before it finishes.
+const _preloadedImages = [];
+(function preloadAll() {
+  const bar    = document.getElementById('loaderBar');
+  const pctEl  = document.getElementById('loaderPct');
+  const loader = document.getElementById('loader');
+  const total  = PRELOAD_ASSETS.length;
+  let done = 0, finished = false;
+
+  function reveal() {                      // hide the loader → game becomes visible
+    if (finished) return;
+    finished = true;
+    if (loader) {
+      loader.classList.add('done');
+      setTimeout(() => { if (loader && loader.parentNode) loader.parentNode.removeChild(loader); }, 600);
+    }
+  }
+  function tick() {                        // one more asset settled (loaded OR failed)
+    done++;
+    const pct = Math.round(done / total * 100);
+    if (bar)   bar.style.width = pct + '%';
+    if (pctEl) pctEl.textContent = pct + '%';
+    if (done >= total) reveal();
+  }
+
+  PRELOAD_ASSETS.forEach(src => {
+    const im = new Image();
+    let counted = false;
+    const once = () => { if (!counted) { counted = true; tick(); } };  // count this asset exactly once
+    // fire whether it loads OR 404s — a missing file must not hang the loading screen forever
+    im.onload = im.onerror = once;
+    im.src = src;
+    if (im.complete) once();               // already cached this session → settle immediately
+    _preloadedImages.push(im);
+  });
+
+  // safety net: never let a stalled/slow asset trap the player on the loader
+  setTimeout(reveal, 12000);
+})();
 
 // ── rounds ──────────────────────────────────────────────────
 const ROUNDS = [
@@ -2261,7 +2361,11 @@ function serveToTray() {
   popSound();                  // glass pops onto the tray
 
   checkBtn.style.display = 'none';   // glass is on the tray — hide the Check button
-  setJuice(0);                 // the filled glass "left", machine now shows an empty one
+  // the filled glass "left" onto the tray → reset the machine glass to empty INSTANTLY
+  // (no liquid-drain/unfill animation on a correct serve); restore the transition after
+  if (fillRect) fillRect.style.transition = 'none';
+  setJuice(0);
+  if (fillRect) { void fillRect.getBoundingClientRect(); requestAnimationFrame(() => { fillRect.style.transition = ''; }); }
 
   // fly it onto the tray on the next frame so the transition runs
   requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -2498,14 +2602,17 @@ function onServeUp(e) {
   if (pairMode) { dropOnPair(e); return; }
 
   const c = clientEl.getBoundingClientRect();
-  const onClient = e.clientX >= c.left && e.clientX <= c.right &&
-                   e.clientY >= c.top  && e.clientY <= c.bottom;
+  // test the GLASS centre against the customer (not the cursor) so a glass placed on
+  // the customer always counts as correct → no false "wrong" shake
+  const g = servedSet.getBoundingClientRect();
+  const gx = g.left + g.width / 2, gy = g.top + g.height / 2;
+  const onClient = gx >= c.left && gx <= c.right && gy >= c.top && gy <= c.bottom;
   if (onClient) {
     deliverToCustomer();
   } else {
-    // wrong drop (missed the ghost) → jump sound + a little "no" shake on the customer
+    // wrong drop (missed the ghost) → jump sound; the customer does NOT shake when the
+    // glass lands off them — only the glass snaps back with a gentle "try again" wiggle
     try { jumpSound.currentTime = 0; jumpSound.play().catch(() => {}); } catch (err) {}
-    shakeEl(clientEl);
     servedSet.style.transition = 'transform 0.3s ease';
     servedSet.style.transform = 'translate(0,0)';   // snap back to the tray
     const s = servedSet;
@@ -2853,16 +2960,19 @@ function shakeEl(el) {
     { transform: 'translateX(-50%) rotate(0deg)'  }
   ], { duration: 460, easing: 'ease-in-out' });
 }
-// shake whichever customer sits under the drop point (wrong drop); fall back to the front
-function shakeCustomerAt(e) {
-  let target = null;
+// shake ONLY the customer the glass is actually dropped on (a wrong customer).
+// Test the glass centre, not the cursor (the glass trails the pointer by the grab
+// offset). If the glass lands on no customer at all — empty table, a box, any other
+// object — nothing shakes.
+function shakeCustomerAt() {
+  if (!servedSet) return;
+  const g = servedSet.getBoundingClientRect();
+  const gx = g.left + g.width / 2, gy = g.top + g.height / 2;
   for (let i = 0; i < queue.length; i++) {
     const el = LANES[queue[i].lane].el;
     const b = el.getBoundingClientRect();
-    if (e.clientX >= b.left && e.clientX <= b.right && e.clientY >= b.top && e.clientY <= b.bottom) { target = el; break; }
+    if (gx >= b.left && gx <= b.right && gy >= b.top && gy <= b.bottom) { shakeEl(el); return; }
   }
-  if (!target && queue[0]) target = LANES[queue[0].lane].el;
-  shakeEl(target);
 }
 
 // drop the finished drink onto the active (first-in-line) customer
@@ -2871,12 +2981,16 @@ function dropOnPair(e) {
   const active = activeCustomer();   // the front of the line — the only one being served
   if (!active) { servedSet.style.transition = 'transform 0.3s ease'; servedSet.style.transform = 'translate(0,0)'; return; }
   const r = LANES[active.lane].el.getBoundingClientRect();
-  const over = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
-  if (over) { wrongDropCount = 0; serveCustomer(active); return; }   // correct target → reset the counter
+  // test where the GLASS is (its centre), not the cursor — the glass trails the pointer
+  // by the grab offset, so a cursor-based test wrongly rejects glasses placed on the customer
+  const g = servedSet.getBoundingClientRect();
+  const gx = g.left + g.width / 2, gy = g.top + g.height / 2;
+  const over = gx >= r.left && gx <= r.right && gy >= r.top && gy <= r.bottom;
+  if (over) { wrongDropCount = 0; serveCustomer(active); return; }   // correct target → serve, no shake
   // ── WRONG drop (off the active customer) ──
   cancelDragIdleNudge();            // they interacted — clear any showing ghost
   try { jumpSound.currentTime = 0; jumpSound.play().catch(() => {}); } catch (err) {}   // wrong-drop sound
-  shakeCustomerAt(e);               // the customer that got the wrong drink shakes "no"
+  shakeCustomerAt();                // only shakes if the glass landed on a wrong customer
   // dropped off the customer → snap back with a gentle wiggle, stay draggable so they can aim again
   servedSet.classList.add('wrongDrop');
   servedSet.style.transition = 'transform 0.3s ease';
