@@ -2403,7 +2403,7 @@ function addLemonToServed() {
 }
 
 function clearServed() {
-  hideDragGhost();
+  cancelDragIdleNudge();
   cancelBoxIdleNudge();
   if (servedSet) { servedSet.remove(); servedSet = null; }
   strawBox.classList.remove('glow'); strawBox.style.pointerEvents = 'none';
@@ -2426,10 +2426,11 @@ function enableServeDrag() {
       if (cueVisible()) { servedSet.classList.add('hintBob'); showDragGhost(); }
     });
   } else {
-    // solo rounds: the dragon is gone — unlock dragging immediately, no waiting
+    // post-tutorial: unlock dragging immediately; the glass just idle-hovers.
+    // NO ghost by default — it only appears after ~9s of inactivity (armDragIdleNudge).
     servedSet.classList.add('draggable');
     servedSet.classList.add('hintBob');
-    showDragGhost();
+    armDragIdleNudge();
   }
 }
 
@@ -2449,12 +2450,30 @@ function hideDragGhost() {
   if (dragGhostEl) { dragGhostEl.remove(); dragGhostEl = null; }
 }
 
+// ── post-tutorial drag idle-hint ────────────────────────────────
+// After the tutorial the finished drink just idle-hovers (hintBob). The ghost
+// drift hint is NOT shown by default — only if the player sits idle ~9s. Any
+// interaction cancels it and returns the glass to its plain hover.
+const DRAG_IDLE_MS = 9000;
+let dragIdleTimer = null;
+function armDragIdleNudge() {
+  cancelDragIdleNudge();
+  if (tutorial || !servedSet) return;   // tutorial guides immediately; nothing to nudge otherwise
+  dragIdleTimer = setTimeout(() => {
+    if (servedSet && !dragActive && lemonAdded) showDragGhost();   // idle too long → show the ghost hint
+  }, DRAG_IDLE_MS);
+}
+function cancelDragIdleNudge() {         // interaction → drop the timer AND the ghost, back to plain hover
+  if (dragIdleTimer) { clearTimeout(dragIdleTimer); dragIdleTimer = null; }
+  hideDragGhost();
+}
+
 function onServeDown(e) {
   if (!lemonAdded || !servedSet) return;
   e.preventDefault();
   dragActive = true;
   hideHand();                       // player grabbed the glass
-  hideDragGhost();                  // grabbed — stop the drag hint
+  cancelDragIdleNudge();            // interaction → stop the ghost + idle timer
   clearVoiceQueue();                // stop the "Drag…" narration
   if (bannerEl) bannerEl.classList.remove('show');   // hide the dialogue box once dragging starts
   servedSet.classList.remove('hintBob');
@@ -2855,7 +2874,7 @@ function dropOnPair(e) {
   const over = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
   if (over) { wrongDropCount = 0; serveCustomer(active); return; }   // correct target → reset the counter
   // ── WRONG drop (off the active customer) ──
-  wrongDropCount++;
+  cancelDragIdleNudge();            // they interacted — clear any showing ghost
   try { jumpSound.currentTime = 0; jumpSound.play().catch(() => {}); } catch (err) {}   // wrong-drop sound
   shakeCustomerAt(e);               // the customer that got the wrong drink shakes "no"
   // dropped off the customer → snap back with a gentle wiggle, stay draggable so they can aim again
@@ -2870,8 +2889,8 @@ function dropOnPair(e) {
     setTimeout(() => {
       if (!s || s !== servedSet) return;
       s.classList.remove('wiggle', 'wrongDrop');
-      // 2+ wrong drops in a row → show the ghost glass drifting to the customer as a hint
-      if (wrongDropCount >= 2) { s.classList.add('hintBob'); showDragGhost(); }
+      s.classList.add('hintBob');    // back to idle hover
+      armDragIdleNudge();            // idle again ~9s → the ghost hint returns
     }, 520);
   }, 300);
 }
@@ -2881,6 +2900,7 @@ function discardDrinkAndRepour() {
   playWrongSound();
   if (servedSet) servedSet.classList.add('wrongDrop');
   cancelBoxIdleNudge();
+  cancelDragIdleNudge();
   setTimeout(() => {
     if (servedSet) { servedSet.remove(); servedSet = null; }
     strawBox.classList.remove('glow'); strawBox.style.pointerEvents = 'none';
@@ -2948,7 +2968,7 @@ function playDrinkAnim(drink, customerEl) {
 function serveCustomer(c) {
   if (c !== queue[0]) return;                          // only the front is ever served
   hideHand();
-  hideDragGhost();
+  cancelDragIdleNudge();
   c.served = true;
   const L = LANES[c.lane];
   const fb = document.getElementById(L.bubbleId);
