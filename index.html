@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Pour the Juice</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -31,12 +31,39 @@ body {
 /* ── canvas (16:9, design space 1920×1080) ── */
 #gc {
   position: relative;
-  width: 100vw;
-  max-width: calc(100vh * 16 / 9);
+  /* the largest 16:9 rectangle that fits the viewport on BOTH axes, centred by
+     the fl​ex body → letterboxes on tall screens, pillarboxes on wide screens */
+  width: min(100vw, calc(100vh * 16 / 9));
+  height: min(56.25vw, 100vh);
   aspect-ratio: 16 / 9;
   overflow: hidden;
   user-select: none;
+  /* make the board a query container so every inner size that uses `cqw`
+     scales with the BOARD width, not the viewport width. This keeps the whole
+     layout consistent on ultra-wide, short-landscape and pillarboxed screens
+     where the board no longer spans the full viewport width. */
+  container-type: inline-size;
 }
+
+/* ── rotate-to-landscape prompt (shown on portrait screens; the game is 16:9) ── */
+#rotate { display: none; }
+@media (orientation: portrait) {
+  #rotate {
+    display: flex;
+    position: fixed; inset: 0;
+    z-index: 100000;              /* above everything, incl. the dev menu */
+    flex-direction: column;
+    align-items: center; justify-content: center;
+    text-align: center;
+    background: #15071f;
+    color: #ffeede;
+    padding: 8vw;
+    font-family: 'Poppins', 'Segoe UI', system-ui, sans-serif;
+  }
+  #rotate .ico { font-size: 20vw; line-height: 1; animation: rotateHint 2s ease-in-out infinite; }
+  #rotate p { margin-top: 6vw; font-size: clamp(15px, 4.6vw, 30px); font-weight: 700; width: 84vw; }
+}
+@keyframes rotateHint { 0%,20% { transform: rotate(0deg); } 60%,100% { transform: rotate(90deg); } }
 
 /* ── full-scene circus background (GAME BG.svg) ── */
 #bgFull {
@@ -184,8 +211,8 @@ body {
   width: max-content;          /* hug the text … */
   max-width: 19%;              /* … up to a sensible cap, then wrap onto more lines */
   background: #fbe9cf;         /* peach fill */
-  border: 0.5vw solid #FE9200; /* thicker orange outline */
-  border-radius: 1.1vw;
+  border: 0.5cqw solid #FE9200; /* thicker orange outline */
+  border-radius: 1.1cqw;
   filter: drop-shadow(0 8px 16px rgba(0,0,0,0.3));
   display: none;
   align-items: center;
@@ -195,7 +222,7 @@ body {
   pointer-events: none;
   color: #2a2a2a;
   font-weight: 600;
-  font-size: 1.35vw;
+  font-size: 1.35cqw;
   line-height: 1.28;
   text-align: center;
   word-break: normal;
@@ -213,10 +240,10 @@ body {
   top: 100%;
   left: 58%;                   /* tail points down toward the dragon (below-right) */
   width: 0; height: 0;
-  border: 0.95vw solid transparent;
+  border: 0.95cqw solid transparent;
 }
 #dragonBubble::before { transform: translateX(-50%);              border-top-color: #FE9200; }
-#dragonBubble::after  { transform: translateX(-50%) translateY(-0.3vw); border-width: 0.72vw; border-top-color: #fbe9cf; }
+#dragonBubble::after  { transform: translateX(-50%) translateY(-0.3cqw); border-width: 0.72cqw; border-top-color: #fbe9cf; }
 #dragonText.typing::after {
   content: '|';
   color: #fbe9cf;
@@ -631,7 +658,7 @@ body {
 /* ── hand tutorial pointer ── */
 #hand {
   position: absolute;
-  width: 4vw;
+  width: 4cqw;
   height: auto;
   z-index: 30;
   pointer-events: none;
@@ -671,7 +698,7 @@ body {
   display: flex;
   align-items: center;
   color: #fff;
-  font-size: 2.1vw;
+  font-size: 2.1cqw;
   font-weight: 900;
   text-shadow: 2px 3px 6px rgba(0,0,0,0.55);
   line-height: 1.2;
@@ -709,7 +736,7 @@ body {
   transform: translateX(-50%);
   background: linear-gradient(180deg, #ffb300, #e65100);
   color: #fff;
-  font-size: 2.2vw;
+  font-size: 2.2cqw;
   font-weight: 900;
   font-family: inherit;
   padding: 1.1% 5%;
@@ -899,6 +926,13 @@ body {
 </style>
 </head>
 <body>
+
+<!-- rotate-to-landscape prompt (portrait only; see #rotate CSS) -->
+<div id="rotate" aria-hidden="true">
+  <div class="ico">📱</div>
+  <p>Please rotate your device to landscape to play.</p>
+</div>
+
 <div id="gc">
 
   <!-- ── circus background ── -->
@@ -1619,7 +1653,7 @@ function triggerWrongHint(target, bubbleEl) {
         // 4) dialogue fully delivered → brief beat, THEN the dragon leaves the screen
         setTimeout(() => {
           if (bannerEl) bannerEl.classList.remove('show');   // dismiss the bubble as the dragon departs
-          unfreezeDragon();                                  // hide the freeze-canvas so the LIVE image slides out
+          unfreezeDragon();                                  // hide the freeze-canvas so the LIVE dragon slides out (not a frozen copy)
           dragonEl.classList.remove('hintIn');
           dragonEl.classList.add('exitRight');
           setTimeout(() => {
