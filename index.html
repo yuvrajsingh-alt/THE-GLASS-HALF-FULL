@@ -786,59 +786,6 @@ body {
   100% { transform: translate(var(--dx,0), 115vh) rotate(720deg) rotateX(540deg); opacity: 0.9; }
 }
 
-/* ── preloader (covers everything until all visual assets are cached) ── */
-#loader {
-  position: fixed;
-  inset: 0;
-  z-index: 200;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 3.2vh;
-  background: radial-gradient(circle at 50% 40%, #2a0f3a 0%, #15071f 70%);
-  color: #fff;
-  transition: opacity 0.5s ease;
-}
-#loader.done { opacity: 0; pointer-events: none; }
-#loaderLogo {
-  font-family: 'Baloo 2', system-ui, sans-serif;
-  font-weight: 800;
-  font-size: clamp(28px, 7vw, 64px);
-  color: #F77ADE;
-  text-shadow: 0 4px 0 #B8156F, 0 8px 18px rgba(0,0,0,0.5);
-  letter-spacing: 0.02em;
-}
-#loaderSpinner {
-  width: clamp(44px, 9vw, 72px);
-  height: clamp(44px, 9vw, 72px);
-  border: clamp(5px, 1vw, 8px) solid rgba(255,255,255,0.18);
-  border-top-color: #F77ADE;
-  border-radius: 50%;
-  animation: loaderSpin 0.9s linear infinite;
-}
-@keyframes loaderSpin { to { transform: rotate(360deg); } }
-#loaderBarWrap {
-  width: min(60vw, 420px);
-  height: clamp(10px, 2vh, 16px);
-  background: rgba(255,255,255,0.14);
-  border-radius: 999px;
-  overflow: hidden;
-}
-#loaderBar {
-  height: 100%;
-  width: 0%;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #B8156F, #F77ADE);
-  transition: width 0.25s ease;
-}
-#loaderPct {
-  font-family: system-ui, sans-serif;
-  font-size: clamp(13px, 2.4vw, 18px);
-  color: rgba(255,255,255,0.75);
-  letter-spacing: 0.08em;
-}
-
 /* ── title screen ── */
 #title {
   position: absolute;
@@ -979,14 +926,6 @@ body {
 </style>
 </head>
 <body>
-
-<!-- preloader: shown until every visual asset is fetched into cache, then fades out -->
-<div id="loader" aria-label="Loading">
-  <div id="loaderLogo">Ready Set Serve!</div>
-  <div id="loaderSpinner"></div>
-  <div id="loaderBarWrap"><div id="loaderBar"></div></div>
-  <div id="loaderPct">0%</div>
-</div>
 
 <!-- rotate-to-landscape prompt (portrait only; see #rotate CSS) -->
 <div id="rotate" aria-hidden="true">
@@ -1232,47 +1171,8 @@ const PRELOAD_ASSETS = [
   'new assets/main bg/pour buttone.svg',
   'new assets/hand nudge.svg'
 ];
-// Load every asset up front and gate the game behind a loading screen: the title/Play
-// button only appears once all of them are cached, so nothing pops in or flashes mid-play.
-// Each image is kept referenced (in _preloadedImages) so it isn't GC'd before it finishes.
-const _preloadedImages = [];
-(function preloadAll() {
-  const bar    = document.getElementById('loaderBar');
-  const pctEl  = document.getElementById('loaderPct');
-  const loader = document.getElementById('loader');
-  const total  = PRELOAD_ASSETS.length;
-  let done = 0, finished = false;
-
-  function reveal() {                      // hide the loader → game becomes visible
-    if (finished) return;
-    finished = true;
-    if (loader) {
-      loader.classList.add('done');
-      setTimeout(() => { if (loader && loader.parentNode) loader.parentNode.removeChild(loader); }, 600);
-    }
-  }
-  function tick() {                        // one more asset settled (loaded OR failed)
-    done++;
-    const pct = Math.round(done / total * 100);
-    if (bar)   bar.style.width = pct + '%';
-    if (pctEl) pctEl.textContent = pct + '%';
-    if (done >= total) reveal();
-  }
-
-  PRELOAD_ASSETS.forEach(src => {
-    const im = new Image();
-    let counted = false;
-    const once = () => { if (!counted) { counted = true; tick(); } };  // count this asset exactly once
-    // fire whether it loads OR 404s — a missing file must not hang the loading screen forever
-    im.onload = im.onerror = once;
-    im.src = src;
-    if (im.complete) once();               // already cached this session → settle immediately
-    _preloadedImages.push(im);
-  });
-
-  // safety net: never let a stalled/slow asset trap the player on the loader
-  setTimeout(reveal, 12000);
-})();
+// keep the Image objects referenced so they aren't garbage-collected before they finish loading
+const _preloadedImages = PRELOAD_ASSETS.map(src => { const im = new Image(); im.src = src; return im; });
 
 // ── rounds ──────────────────────────────────────────────────
 const ROUNDS = [
