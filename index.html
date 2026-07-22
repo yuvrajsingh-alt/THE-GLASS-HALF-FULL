@@ -431,14 +431,16 @@ body {
   pointer-events: none;
   z-index: 11;                 /* just behind the real, grabbable glass (z30) */
   filter: drop-shadow(0 6px 10px rgba(0,0,0,0.25));
-  animation: dragGhost 1.8s ease-in-out infinite;
+  animation: dragGhost 2.2s ease-in-out infinite;
   will-change: transform, opacity;
 }
+/* --gdx/--gdy = the full tray→customer journey, measured live in showDragGhost()
+   so the ghost always travels ALL the way to the customer's table before fading */
 @keyframes dragGhost {
-  0%        { transform: translate(0,0)        scale(1);    opacity: 0;    }
-  12%       { transform: translate(-5%,-12%)   scale(0.97); opacity: 0.5;  }
-  65%       { transform: translate(-44%,-140%) scale(0.8);  opacity: 0.3;  }
-  85%,100%  { transform: translate(-52%,-165%) scale(0.72); opacity: 0;    }
+  0%       { transform: translate(0,0) scale(1); opacity: 0; }
+  10%      { transform: translate(calc(var(--gdx,-100%) * 0.08), calc(var(--gdy,-230%) * 0.08)) scale(0.97); opacity: 0.55; }
+  80%      { transform: translate(calc(var(--gdx,-100%) * 0.9),  calc(var(--gdy,-230%) * 0.9))  scale(0.8);  opacity: 0.45; }
+  95%,100% { transform: translate(var(--gdx,-100%), var(--gdy,-230%)) scale(0.75); opacity: 0; }
 }
 
 /* ── juice stream (nozzle → glass) — flowing liquid column ── */
@@ -2573,6 +2575,15 @@ function showDragGhost() {
   if (!servedSet) return;
   const ghost = servedSet.cloneNode(true);   // same drink (glass + straw + lemon), at the same spot
   ghost.classList.remove('draggable', 'hintBob');
+  // aim the drift at the ACTUAL target customer (tutorial client, or the front of
+  // the line) so the ghost travels the whole way to their table, not a fixed hop
+  const targetEl = (pairMode && queue[0]) ? LANES[queue[0].lane].el : clientEl;
+  const gr = servedSet.getBoundingClientRect();
+  const tr = targetEl.getBoundingClientRect();
+  const dx = (tr.left + tr.width / 2)    - (gr.left + gr.width / 2);    // → customer centre
+  const dy = (tr.top + tr.height * 0.75) - (gr.top + gr.height / 2);    // → their table edge
+  ghost.style.setProperty('--gdx', (dx / gr.width  * 100).toFixed(1) + '%');
+  ghost.style.setProperty('--gdy', (dy / gr.height * 100).toFixed(1) + '%');
   ghost.classList.add('dragGhost');
   gcEl.appendChild(ghost);
   dragGhostEl = ghost;
