@@ -362,6 +362,13 @@ body {
   z-index: 6;
   pointer-events: none;
 }
+/* completely-full look: swap the drawn glass (body + rising liquid + half-line) for the
+   polished full-glass art. Only shown when #glass has .full (fillPct === 100). */
+.glassFullArt { display: none; }
+#glass.full .glassFullArt { display: block; }
+#glass.full > path,
+#glass.full > g,
+#glass.full > line { visibility: hidden; }
 /* tutorial highlight — empty glass pulses with a golden glow */
 #glass.glow { animation: glassGlow 0.9s ease-in-out infinite; transform-origin: center bottom; }
 @keyframes glassGlow {
@@ -399,6 +406,9 @@ body {
               top  0.85s cubic-bezier(0.5,-0.25,0.6,1);
 }
 .servedSet .glassImg { position: absolute; inset: 0; width: 100%; height: 100%; }
+/* the dedicated full-glass art is a bitmap-ish <img>, not the inline SVG clone — fit it
+   inside the same box, bottom-aligned & centred, so it occupies the identical footprint */
+.servedSet .fullGlassArt { object-fit: contain; object-position: center bottom; }
 .servedSet.draggable { pointer-events: auto; cursor: grab; z-index: 30; touch-action: none; }
 .servedSet.draggable:active { cursor: grabbing; }
 .servedSet.hintBob { animation: hintBob 1s ease-in-out infinite; }
@@ -1040,6 +1050,38 @@ body {
     <!-- half-way dotted guide line across the middle of the glass -->
     <line x1="300" y1="1037" x2="1045" y2="1037" stroke="#1c1a1a" stroke-width="20"
           stroke-linecap="round" stroke-dasharray="2 46" opacity="0.8"/>
+    <!-- polished full-glass art (inlined from new assets/full glass.svg): shown ONLY when
+         completely full (#glass.full). Nested SVG with its own viewBox so it renders crisply
+         and lines up over the drawn glass footprint, inheriting the glow/shake transforms. -->
+    <svg class="glassFullArt" x="80" y="175" width="1190" height="1775" viewBox="0 0 34 51" preserveAspectRatio="xMidYMax meet" overflow="visible">
+      <path d="M33.7244 4.19693C33.7238 4.18733 33.7143 4.17804 33.706 4.17994C33.6962 4.18024 33.6885 4.18813 33.6885 4.19783C33.6885 4.65593 33.387 5.10724 32.7922 5.53924C32.7873 5.54254 32.7847 5.54804 32.7847 5.55384C32.8209 10.5026 31.9381 18.5484 30.3623 27.6279C29.0584 35.1406 27.5423 41.7485 26.8355 42.9982C25.8163 44.8001 20.4148 45.6108 16.9049 45.6108C13.6205 45.6108 8.25501 44.7803 7.16951 42.9979C6.53031 41.9481 4.88751 34.9741 3.50742 27.4519C1.77484 18.0074 0.855479 10.0145 0.985269 5.52264C0.985409 5.51684 0.982739 5.51134 0.978119 5.50784C0.411349 5.08534 0.123919 4.64463 0.123919 4.19783C0.123919 4.18823 0.116369 4.18044 0.106869 4.17994C0.098629 4.18014 0.089099 4.18664 0.088269 4.19614C-0.464511 9.98824 1.72153 23.2847 2.68719 28.7325C4.31471 37.9155 6.28211 46.5924 6.98331 47.6795C7.63021 48.6823 9.50981 49.2825 10.9727 49.6092C12.735 50.0031 14.8977 50.2287 16.9063 50.2287C20.9499 50.2287 25.7801 49.431 26.8295 47.6789C27.6063 46.3822 29.4629 38.1808 31.0565 29.0079C31.9694 23.7521 34.0571 10.8131 33.7244 4.19693Z" fill="#DFDAD0"/>
+      <path d="M32.8129 5.55312C32.8129 5.54642 32.8092 5.54031 32.8032 5.53731C32.7968 5.53411 32.7899 5.53492 32.7845 5.53882C30.4605 7.22622 24.0765 8.35991 16.8986 8.35991C9.66002 8.35991 3.25901 7.21362 0.970464 5.50742C0.965154 5.50342 0.958004 5.50282 0.951864 5.50572C0.945834 5.50862 0.941934 5.51462 0.941784 5.52132C0.811994 10.0154 1.73149 18.0111 3.46448 27.4578C4.84511 34.9838 6.49011 41.9632 7.13131 43.0159C7.74161 44.0181 9.62441 44.6407 11.0964 44.9864C12.8556 45.3995 15.0242 45.6461 16.8972 45.6461C20.4158 45.6461 25.8327 44.8299 26.8588 43.0156C27.5676 41.7625 29.0854 35.1497 30.3899 27.6335C31.966 18.552 32.8491 10.504 32.8129 5.55312Z" fill="#EAE7E0"/>
+      <path d="M30.2832 21.6838C30.2743 21.6823 30.2649 21.6877 30.2623 21.6969C30.1302 22.2095 28.6842 22.6906 26.1911 23.0515C23.6844 23.4143 20.3853 23.6141 16.9017 23.6141C13.4279 23.6141 10.1355 23.4152 7.63121 23.0543C5.14101 22.6952 3.68901 22.216 3.54298 21.705C3.54031 21.6959 3.53095 21.6901 3.52199 21.6924C3.51275 21.6944 3.5066 21.7032 3.50801 21.7126C4.15621 25.9673 5.06981 30.8389 6.01481 35.0785C6.87721 38.9477 7.63801 41.7122 8.00011 42.2927C8.99581 43.8888 13.8981 44.6323 16.8978 44.6323C20.1035 44.6323 25.0388 43.9063 25.974 42.2921C26.8127 40.8446 28.9724 31.06 30.2976 21.7039C30.2988 21.6945 30.2927 21.6856 30.2832 21.6838Z" fill="#F77ADE"/>
+      <path d="M32.8027 6.20567C32.7921 6.20407 32.7809 6.20977 32.7777 6.21957C32.6195 6.76267 30.8904 7.27237 27.9088 7.65477C24.911 8.03917 20.9655 8.25097 16.7993 8.25097C12.6449 8.25097 8.70741 8.04027 5.71251 7.65767C2.73438 7.27727 0.997922 6.76957 0.823292 6.22807C0.820102 6.21837 0.808911 6.21237 0.798201 6.21467C0.787151 6.21687 0.779802 6.22617 0.781492 6.23617C1.55662 10.7443 2.36407 16.7277 3.49418 21.2194C4.52561 25.3192 5.72061 27.4266 6.15361 28.0416C7.34451 29.7327 13.2073 30.5207 16.7947 30.5207C20.6284 30.5207 27.5674 29.2312 28.6859 27.5208C29.6887 25.987 31.4944 15.591 33.0794 5.67787C33.0809 5.66787 32.8139 6.20757 32.8027 6.20567Z" fill="#F77ADE"/>
+      <path d="M28.788 1.2249C25.6135 0.435001 21.3931 0 16.9041 0C12.4152 0 8.19482 0.435001 5.02032 1.2249C1.83824 2.0167 0.0859375 3.0727 0.0859375 4.1983C0.0859375 4.657 0.378137 5.1073 0.954537 5.537C3.24869 7.2474 9.65842 8.3966 16.9041 8.3966C24.0889 8.3966 30.4816 7.2601 32.811 5.5686C33.4156 5.1295 33.7222 4.6685 33.7222 4.1983C33.7222 3.0727 31.9701 2.0167 28.788 1.2249Z" fill="#F8FBF6"/>
+      <path d="M5.65511 6.24523C8.65881 6.85473 12.6522 7.19043 16.8998 7.19043C21.1474 7.19043 25.1408 6.85473 28.1444 6.24523C31.1565 5.63413 32.8153 4.81783 32.8153 3.94673C32.8153 3.07573 31.1565 2.25943 28.1444 1.64823C25.1408 1.03883 21.1474 0.703125 16.8998 0.703125C12.6522 0.703125 8.65881 1.03883 5.65511 1.64823C2.64309 2.25943 0.984375 3.07563 0.984375 3.94673C0.984375 4.81783 2.64309 5.63413 5.65511 6.24523Z" fill="#DFDAD0"/>
+      <path d="M28.1712 1.89923C25.1674 1.25143 21.174 0.894531 16.9267 0.894531C12.6792 0.894531 8.68591 1.25143 5.68231 1.89923C2.66788 2.54923 1.00781 3.42103 1.00781 4.35393C1.00781 4.40293 1.01332 4.45443 1.0246 4.51153C1.39279 6.36293 8.37781 7.81303 16.9267 7.81303C25.5114 7.81303 32.4976 6.35623 32.8315 4.49633C32.8409 4.44373 32.8455 4.39703 32.8455 4.35383C32.8455 3.42103 31.1853 2.54923 28.1712 1.89923Z" fill="#F77ADE"/>
+      <path d="M21.3813 31.1237C21.5187 31.1237 21.5907 31.0149 21.5907 30.9076C21.5907 30.8002 21.5187 30.6914 21.3813 30.6914C21.2438 30.6914 21.1719 30.8002 21.1719 30.9078C21.1719 31.0152 21.2438 31.1237 21.3813 31.1237Z" fill="#FC7DA8"/>
+      <path d="M24.87 29.7827C24.87 29.682 24.8024 29.5801 24.6733 29.5801C24.5442 29.5801 24.4766 29.6823 24.4766 29.783C24.4766 29.8358 24.4941 29.8849 24.5257 29.922C24.5617 29.9639 24.6127 29.986 24.6733 29.986C24.8024 29.9857 24.87 29.8838 24.87 29.7827Z" fill="#FC7DA8"/>
+      <path d="M27.366 27.8945C27.3183 27.8945 27.2781 27.912 27.2494 27.945C27.2244 27.974 27.2109 28.0128 27.2109 28.0544C27.2109 28.1339 27.264 28.2143 27.366 28.2143C27.4679 28.2143 27.5213 28.1339 27.5213 28.0541C27.5213 27.9749 27.4679 27.8945 27.366 27.8945Z" fill="#FC7DA8"/>
+      <path d="M26.4861 32.4961C26.3466 32.4961 26.2734 32.6066 26.2734 32.7157C26.2734 32.7725 26.2923 32.8259 26.3265 32.8655C26.3653 32.9109 26.4204 32.9347 26.4861 32.9347C26.6256 32.9347 26.6986 32.8245 26.6986 32.7154C26.6986 32.6063 26.6256 32.4961 26.4861 32.4961Z" fill="#FC7DA8"/>
+      <path d="M26.419 26.8086C26.419 26.7193 26.359 26.6289 26.2447 26.6289C26.1303 26.6289 26.0703 26.7193 26.0703 26.8089C26.0703 26.8554 26.0858 26.899 26.1138 26.9318C26.1457 26.9688 26.191 26.9883 26.2447 26.9883C26.359 26.9883 26.419 26.8979 26.419 26.8086Z" fill="#FC7DA8"/>
+      <path d="M28.7381 24.3594C28.6913 24.3594 28.6517 24.3766 28.6238 24.409C28.5997 24.4374 28.5859 24.4756 28.5859 24.5161C28.5859 24.5939 28.6385 24.6728 28.7381 24.6728C28.8377 24.6728 28.8899 24.5939 28.8899 24.5161C28.8899 24.4753 28.8765 24.4374 28.8523 24.409C28.8245 24.3766 28.7849 24.3594 28.7381 24.3594Z" fill="#FC7DA8"/>
+      <path d="M22.2483 25.0111C22.2876 24.9654 22.3093 24.904 22.3093 24.8383C22.3093 24.7128 22.2252 24.5859 22.0648 24.5859C21.9042 24.5859 21.8203 24.7128 21.8203 24.8385C21.8203 24.9637 21.9042 25.0909 22.0648 25.0909C22.1402 25.0909 22.2036 25.0633 22.2483 25.0111Z" fill="#FC7DA8"/>
+      <path d="M23.2449 35.2793C23.0123 35.2793 23.0119 35.6456 23.2449 35.6456C23.4776 35.6456 23.478 35.2793 23.2449 35.2793Z" fill="#E6AEDB"/>
+      <path d="M21.3198 35.4668C21.0291 35.4668 21.0286 35.9247 21.3198 35.9247C21.6106 35.9247 21.6111 35.4668 21.3198 35.4668Z" fill="#E6AEDB"/>
+      <path d="M23.123 32.4375L23.1514 32.4364C23.4905 32.4211 23.4911 31.9173 23.1514 31.9021L23.123 31.9007C22.7822 31.8855 22.7816 32.4527 23.123 32.4375Z" fill="#E6AEDB"/>
+      <path d="M25.0729 34.4355C24.7676 34.4355 24.7671 34.9164 25.0729 34.9164C25.3783 34.9164 25.3788 34.4355 25.0729 34.4355Z" fill="#E6AEDB"/>
+      <path d="M23.0592 38.4355C22.6472 38.4355 22.6466 39.084 23.0592 39.084C23.4711 39.084 23.4718 38.4355 23.0592 38.4355Z" fill="#E6AEDB"/>
+      <path d="M25.8979 35.6523C25.6072 35.6523 25.6066 36.1102 25.8979 36.1102C26.1888 36.1102 26.1892 35.6523 25.8979 35.6523Z" fill="#E6AEDB"/>
+      <path d="M20.7468 25.2148C20.4076 25.2148 20.407 25.7491 20.7468 25.7491C21.086 25.7491 21.0866 25.2148 20.7468 25.2148Z" fill="#E6AEDB"/>
+      <path d="M24.8231 24.9746C24.5904 24.9746 24.59 25.3409 24.8231 25.3409C25.0557 25.3409 25.0561 24.9746 24.8231 24.9746Z" fill="#E6AEDB"/>
+      <path d="M22.9057 25.1602C22.615 25.1602 22.6145 25.6181 22.9057 25.6181C23.1965 25.6181 23.1971 25.1602 22.9057 25.1602Z" fill="#E6AEDB"/>
+      <path d="M24.709 22.1309L24.7374 22.1296C25.0765 22.1144 25.077 21.6106 24.7374 21.5954L24.709 21.5941C24.3681 21.5788 24.3676 22.1462 24.709 22.1309Z" fill="#E6AEDB"/>
+      <path d="M26.6589 24.1289C26.3534 24.1289 26.3531 24.6097 26.6589 24.6097C26.964 24.6097 26.9646 24.1289 26.6589 24.1289Z" fill="#E6AEDB"/>
+      <path d="M24.6374 28.1309C24.2254 28.1309 24.2248 28.7794 24.6374 28.7794C25.0494 28.7794 25.05 28.1309 24.6374 28.1309Z" fill="#E6AEDB"/>
+      <path d="M27.484 25.3457C27.1932 25.3457 27.1926 25.8036 27.484 25.8036C27.7749 25.8036 27.7751 25.3457 27.484 25.3457Z" fill="#E6AEDB"/>
+    </svg>
   </svg>
 
   <!-- ── juice stream ── -->
@@ -1286,7 +1328,14 @@ function armPourNudge() {
   if (idleNudgeTimer) { clearTimeout(idleNudgeTimer); idleNudgeTimer = null; }
   if (!pairMode) return;                 // tutorial / solo: no idle nudge
   idleNudgeTimer = setTimeout(() => {
-    if (pairMode && phase === 'play' && !pourBtn.disabled) showPourHand();
+    if (!(pairMode && phase === 'play' && !pourBtn.disabled)) return;
+    // don't nudge POUR once the glass already meets the order — the glass is full/ready,
+    // so pointing at POUR (telling them to pour more) would be a wrong hint
+    const active = activeCustomer();
+    const want = active ? active.target : 'full';
+    const goalReached = (want === 'half') ? (fillPct >= HALF_MIN) : (fillPct >= FULL_MIN);
+    if (goalReached) return;
+    showPourHand();
   }, 11000);
 }
 function cancelPourNudge() {
@@ -2230,6 +2279,8 @@ function setJuice(pct) {
   const frac = Math.max(0, Math.min(1, pct / 100));
   const top = 340, bot = 1735;         // liquid surface range inside the glass SVG
   if (fillRect) fillRect.setAttribute('y', (bot - frac * (bot - top)).toFixed(1));
+  // completely full → show the polished full-glass art in place of the drawn fill
+  if (glassEl) glassEl.classList.toggle('full', pct >= 100);
 }
 
 // ── on a correct answer: clone the filled glass into a draggable set on the tray ──
@@ -2240,20 +2291,31 @@ function serveToTray() {
   const set = document.createElement('div');
   set.className = 'servedSet';
 
-  const clone = glassEl.cloneNode(true);
-  clone.removeAttribute('id');
-  clone.classList.add('glassImg');
-  const guide = clone.querySelector('line'); if (guide) guide.remove();   // no half-line on the served glass
   servedN++;
-  // give the clone's clip a unique id so it freezes at the current fill level
-  const cp = clone.querySelector('clipPath');
-  if (cp) {
-    const nid = 'fillClipServed' + servedN;
-    cp.id = nid;
-    clone.querySelectorAll('[clip-path]').forEach(g => g.setAttribute('clip-path', 'url(#' + nid + ')'));
-    const r = clone.querySelector('rect'); if (r) r.removeAttribute('id');
+  const lvl = pairMode ? servedLevel : ROUNDS[level].target;   // 'full' | 'half'
+  if (lvl === 'full') {
+    // full order → use the dedicated finished full-glass art (matches the glass footprint:
+    // same 0.67 aspect as the machine glass, so straw/lemon overlays still line up)
+    const img = document.createElement('img');
+    img.className = 'glassImg fullGlassArt';
+    img.src = 'new assets/full glass.svg';
+    set.appendChild(img);
+  } else {
+    // half order → clone the machine glass so it keeps the exact half fill level
+    const clone = glassEl.cloneNode(true);
+    clone.removeAttribute('id');
+    clone.classList.add('glassImg');
+    const guide = clone.querySelector('line'); if (guide) guide.remove();   // no half-line on the served glass
+    // give the clone's clip a unique id so it freezes at the current fill level
+    const cp = clone.querySelector('clipPath');
+    if (cp) {
+      const nid = 'fillClipServed' + servedN;
+      cp.id = nid;
+      clone.querySelectorAll('[clip-path]').forEach(g => g.setAttribute('clip-path', 'url(#' + nid + ')'));
+      const r = clone.querySelector('rect'); if (r) r.removeAttribute('id');
+    }
+    set.appendChild(clone);
   }
-  set.appendChild(clone);
   set.style.left = '20.24%';   // start over the machine glass
   set.style.top  = '79.4%';
   gcEl.appendChild(set);
