@@ -1378,11 +1378,11 @@ pourSound.preload = 'auto';
 const bonusSound = new Audio('sxf/gamebonus.mp3');
 bonusSound.preload = 'auto';
 bonusSound.volume = 0.25;             // 25% volume
-// cash-register sound when a drink is delivered (dragged & dropped) to a customer
+// coin/cash-register sound — plays when the coin pile APPEARS on the counter (see rewardCoins)
 const serveSound = new Audio('sxf/cash-register..mp3');
 serveSound.preload = 'auto';
 serveSound.volume = 0.5;             // 50% quieter
-// sound when the coin reward pile fades away
+// sound when the drink is dragged & dropped onto (delivered to) a customer
 const coinsGoneSound = new Audio('sxf/coins disappers.mp3');
 coinsGoneSound.preload = 'auto';
 
@@ -2672,9 +2672,10 @@ function deliverToCustomer() {
   const isGhost = (ROUNDS[level].skin === 'ghost');
 
   // the drink is handed over → it flies to the ghost's mouth, they drink, glass disappears
+  // (the cash-register sfx plays later, in rewardCoins, in sync with the pile appearing)
   playDrinkAnim(servedSet, clientEl);
   servedSet = null;
-  try { serveSound.currentTime = 0; serveSound.play().catch(() => {}); } catch (e) {}   // cash-register on delivery
+  try { coinsGoneSound.currentTime = 0; coinsGoneSound.play().catch(() => {}); } catch (e) {}   // delivery sfx
 
   // once the drink is finished → cheer + coins, then the ghost floats out to the left
   setTimeout(() => {
@@ -3075,10 +3076,11 @@ function rewardCoins(fromEl) {
   pile.style.display = 'block';
   void pile.offsetWidth;
   pile.classList.add('landIn');                     // magical materialise
+  // coin sfx fires EXACTLY as the pile appears (not at drop time ~1s earlier)
+  try { serveSound.currentTime = 0; serveSound.play().catch(() => {}); } catch (e) {}
   pile._hold = setTimeout(() => {                   // hold ~0.9 seconds…
     pile.classList.remove('landIn');
-    pile.classList.add('fadeOut');                  // …then smooth magical fade-out
-    try { coinsGoneSound.currentTime = 0; coinsGoneSound.play().catch(() => {}); } catch (e) {}   // coins vanish sound
+    pile.classList.add('fadeOut');                  // …then smooth magical fade-out (no sfx)
     pile._gone = setTimeout(() => { pile.style.display = 'none'; pile.classList.remove('fadeOut'); }, 720);
   }, 900);
 }
@@ -3128,9 +3130,10 @@ function serveCustomer(c) {
 
   // hand over the drink → it flies to the customer's mouth, they drink, glass disappears
   const el = L.el, leftLane = c.lane;
+  // (the cash-register sfx plays later, in rewardCoins, in sync with the pile appearing)
   playDrinkAnim(servedSet, el);
   servedSet = null;
-  try { serveSound.currentTime = 0; serveSound.play().catch(() => {}); } catch (e) {}   // cash-register on delivery
+  try { coinsGoneSound.currentTime = 0; coinsGoneSound.play().catch(() => {}); } catch (e) {}   // delivery sfx
   busyLanes.push(leftLane);
   // reset the finishing boxes; lock the bar for the whole serve → exit beat
   strawBox.classList.remove('glow'); strawBox.style.pointerEvents = 'none';
