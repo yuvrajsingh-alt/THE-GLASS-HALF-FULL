@@ -1346,7 +1346,7 @@ function armPourNudge() {
     const goalReached = (want === 'half') ? (fillPct >= HALF_MIN) : (fillPct >= FULL_MIN);
     // glass already matches the order → the next step is Check: nudge the Check button
     if (drinkLevel() === want && checkBtn.style.display !== 'none' && !checkBtn.disabled) {
-      handToCenterOf(checkBtn, true, 0.9);   // sit below the button so its label stays visible
+      handToCenterOf(checkBtn, true, 0.4);   // fingertip ON the button, below its "Check" label
       idleHandShown = true;
       return;
     }
