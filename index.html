@@ -833,11 +833,21 @@ body {
   border: none;
   background: none;
   padding: 0;
-  filter: drop-shadow(0 10px 22px rgba(0,0,0,0.55));
   animation: playPulse 1.2s ease-in-out infinite;
 }
-@keyframes playPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.07); } }
-.playBtn:hover { filter: drop-shadow(0 10px 26px rgba(255,215,0,0.6)); }
+/* soft grounding shadow + a warm golden halo that breathes with the scale pulse */
+@keyframes playPulse {
+  0%,100% {
+    transform: scale(1);
+    filter: drop-shadow(0 8px 14px rgba(0,0,0,0.35))
+            drop-shadow(0 0 10px rgba(255,214,110,0.35));
+  }
+  50% {
+    transform: scale(1.07);
+    filter: drop-shadow(0 8px 16px rgba(0,0,0,0.3))
+            drop-shadow(0 0 24px rgba(255,205,70,0.85));
+  }
+}
 /* the post-game "Play Again" button sits a little lower than the initial Play button */
 .playBtn.again { top: 74%; }
 @keyframes introOut { 0% { opacity: 1; } 100% { opacity: 0; } }
