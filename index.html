@@ -1333,23 +1333,37 @@ function showPourHand() {
 // In customer mode the POUR hand only appears after ~11s of inactivity (not immediately).
 // The tutorial keeps its own hand cues and never uses this.
 let idleNudgeTimer = null;
+let idleHandShown = false;   // the hand currently on screen came from THIS idle nudge
 function armPourNudge() {
   if (idleNudgeTimer) { clearTimeout(idleNudgeTimer); idleNudgeTimer = null; }
   if (!pairMode) return;                 // tutorial / solo: no idle nudge
   idleNudgeTimer = setTimeout(() => {
-    if (!(pairMode && phase === 'play' && !pourBtn.disabled)) return;
-    // don't nudge POUR once the glass already meets the order — the glass is full/ready,
-    // so pointing at POUR (telling them to pour more) would be a wrong hint
+    if (!(pairMode && phase === 'play')) return;
     const active = activeCustomer();
     const want = active ? active.target : 'full';
     const goalReached = (want === 'half') ? (fillPct >= HALF_MIN) : (fillPct >= FULL_MIN);
-    if (goalReached) return;
-    showPourHand();
+    // glass already matches the order → the next step is Check: nudge the Check button
+    if (drinkLevel() === want && checkBtn.style.display !== 'none' && !checkBtn.disabled) {
+      handToCenterOf(checkBtn, true, 0.9);   // sit below the button so its label stays visible
+      idleHandShown = true;
+      return;
+    }
+    // otherwise (still short of the goal) → nudge POUR. Overpoured/ambiguous fills get
+    // no nudge: pointing at POUR would say "pour more", which is a wrong hint there.
+    if (!goalReached && !pourBtn.disabled) { showPourHand(); idleHandShown = true; }
   }, 11000);
 }
 function cancelPourNudge() {
   if (idleNudgeTimer) { clearTimeout(idleNudgeTimer); idleNudgeTimer = null; }
 }
+// ANY activity (mouse move, click, touch) dismisses an idle-nudge hand and restarts
+// the ~11s inactivity window, so the hand returns only after the player goes idle again.
+function noteIdleActivity() {
+  if (idleHandShown) { hideHand(); idleHandShown = false; }
+  if (pairMode && phase === 'play') armPourNudge();
+}
+document.addEventListener('pointerdown', noteIdleActivity, true);
+document.addEventListener('pointermove', noteIdleActivity, { capture: true, passive: true });
 
 // ── sound (only worng.mp3 ships; pour/win use WebAudio beeps) ──
 const wrongSound = new Audio('sxf/worng.mp3');
@@ -2075,15 +2089,18 @@ function placeHand()       { moveHand('22%', '69%'); }     // POUR button
 function handToCheck()     { if (phase !== 'play') return; moveHand('61%', '90%'); }   // Check button (never after Check was pressed)
 // centre the hand nudge exactly on a target element (measured live → exact at any size)
 // `force` shows the hand without a dialogue line (used by the idle nudges)
-function handToCenterOf(el, force) {
+// `dyFrac` shifts the hand DOWN by that fraction of the target's height, so the
+// fingertip points at the target from below without covering it (e.g. buttons)
+function handToCenterOf(el, force, dyFrac) {
   if (!force && !cueVisible()) { hideHand(); return; }
   const gr = gcEl.getBoundingClientRect();
   const b  = el.getBoundingClientRect();
   handEl.classList.remove('dragHint');
   handEl.style.display = 'block';                    // show first so the hand's size is measurable
   const hw = handEl.offsetWidth, hh = handEl.offsetHeight;
+  const dy = b.height * (dyFrac || 0);
   handEl.style.left = ((b.left + b.width  / 2 - gr.left - hw / 2) / gr.width  * 100) + '%';
-  handEl.style.top  = ((b.top  + b.height / 2 - gr.top  - hh / 2) / gr.height * 100) + '%';
+  handEl.style.top  = ((b.top  + b.height / 2 - gr.top  - hh / 2 + dy) / gr.height * 100) + '%';
 }
 function handToStrawBox()  { handToCenterOf(strawBox); }   // straw box — hand dead-centre
 function handToLemonBox()  { handToCenterOf(lemonBox); }   // lemon box — hand dead-centre
@@ -3511,10 +3528,12 @@ function devPairJump(target, step, lastVisit) {
   const pct = (target === 'half') ? 50 : 100;
   if (step === 'pour') {
     pourBtn.disabled = false;
+    armPourNudge();                   // idle ~11s → hand nudge, same as real play
   } else if (step === 'check') {
     fillPct = pct; hasPoured = true; setJuice(fillPct);
     pourBtn.disabled = (fillPct >= 100);
     checkBtn.style.display = 'block'; checkBtn.disabled = false;
+    armPourNudge();                   // idle ~11s → hand nudge on Check
   } else if (step === 'tray' || step === 'serve') {
     fillPct = pct; hasPoured = true; setJuice(fillPct);
     servedLevel = target;             // serveToTray reads this in customer mode
