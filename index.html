@@ -934,6 +934,12 @@ body {
 }
 #devList .devGroup.open .devSub { display: block; }
 #devList .devSub button { font-size: 12px; padding: 5px 9px; background: #3a2550; }
+/* small section heading inside a submenu (e.g. "Half-glass order") */
+#devList .devLabel {
+  margin: 7px 0 2px; padding: 0 2px;
+  font: 700 10px system-ui, sans-serif; letter-spacing: 0.6px;
+  color: #b9a3d0; text-transform: uppercase;
+}
 /* ════ end DEV screen switcher ════ */
 
 </style>
@@ -3274,6 +3280,14 @@ function toggleDevMenu() {
   const l = document.getElementById('devList');
   if (l) l.classList.toggle('open');
 }
+// tap/click anywhere outside the menu → close it
+document.addEventListener('pointerdown', (e) => {
+  const menu = document.getElementById('devMenu');
+  const l = document.getElementById('devList');
+  if (l && l.classList.contains('open') && menu && !menu.contains(e.target)) {
+    l.classList.remove('open');
+  }
+});
 function devResetScene() {
   clearVoiceQueue();
   hideHand();
@@ -3433,6 +3447,100 @@ function devToServe(n) {
   devHand('60%', '74%', true);
 }
 
+// ── customer-mode quick-jumps (the actual post-tutorial game) ──────────────
+// Drops straight into CUSTOMER MODE at a given step: the front customer is
+// already at the counter (no walk-in) asking for `target` ('half' | 'full'),
+// and more customers keep arriving on the normal ramping timer.
+//   step: 'pour' | 'check' | 'tray' | 'serve'
+//   lastVisit: true → this is the cycle's ONLY remaining order, so delivering
+//   it completes the cycle and rolls into the end screen (for testing the end).
+function devPairJump(target, step, lastVisit) {
+  devResetScene();
+  titleDone = true;
+  const t = document.getElementById('title');
+  if (t) { t.style.display = 'none'; t.classList.remove('leaving'); }
+  dragonGone = true;
+  if (dragonEl) { dragonEl.classList.remove('exitRight', 'intro'); dragonEl.style.display = 'none'; }
+
+  // fresh cycle whose FIRST visit matches the requested order type
+  pairMode = true; tutorial = false; phase = 'play';
+  wrongCheckCount = 0; hintActive = false;
+  lastSpawnSkin = null;
+  customerOrder = buildCustomerOrder();
+  const i = customerOrder.findIndex(v => v.target === target);
+  if (i > 0) customerOrder.unshift(customerOrder.splice(i, 1)[0]);
+  if (lastVisit) customerOrder = customerOrder.slice(0, 1);
+  qIndex = 0; spawnCount = 0; queue = []; busyLanes = [];
+
+  // base machine state (mirrors startPair, minus the walk-in delays)
+  clearVoiceQueue();
+  clearInterval(bannerTimer);
+  clearServed();
+  fillPct = 0; hasPoured = false; setJuice(0);
+  glassEl.classList.remove('glow', 'wrong');
+  pourBtn.disabled = true;
+  checkBtn.style.display = 'none'; checkBtn.disabled = true;
+  hideHand();
+  if (bannerEl) bannerEl.classList.remove('show', 'introPos');
+  if (bannerTxt) bannerTxt.textContent = '';
+  LANES.forEach(l => {
+    l.el.style.display = 'none';
+    const b = document.getElementById(l.bubbleId); if (b) b.classList.remove('show');
+  });
+
+  // front customer appears already at the counter (skip the 2.8s walk-in)
+  const data = nextCustomerData(); spawnCount++;
+  const pos = QUEUE_POS[0], L = LANES[0], el = L.el;
+  el.className = data.skin;
+  el.style.transition = 'none';
+  el.style.display = 'block'; el.style.opacity = '1';
+  el.style.height = ''; el.style.zIndex = '';
+  el.style.left = pos.left;
+  el.src = data.img;
+  const bg = document.getElementById(L.bgId);
+  if (bg) bg.src = (data.target === 'half') ? 'new assets/dailoge box for half glass.svg'
+                                            : 'new assets/dailoge box.svg';
+  const inner = document.getElementById(L.innerId); if (inner) inner.textContent = '';
+  const bubble = document.getElementById(L.bubbleId);
+  if (bubble) { bubble.style.transition = 'none'; placeBubble(bubble, pos, data.skin); }
+  queue.push({ lane: 0, target: data.target, skin: data.skin, served: false, walkedIn: true });
+  refreshActive();                    // order bubble opens immediately
+  if (!lastVisit) scheduleSpawn();    // the rest of the line keeps arriving as usual
+
+  // fast-forward the juice machine to the requested step
+  const pct = (target === 'half') ? 50 : 100;
+  if (step === 'pour') {
+    pourBtn.disabled = false;
+  } else if (step === 'check') {
+    fillPct = pct; hasPoured = true; setJuice(fillPct);
+    pourBtn.disabled = (fillPct >= 100);
+    checkBtn.style.display = 'block'; checkBtn.disabled = false;
+  } else if (step === 'tray' || step === 'serve') {
+    fillPct = pct; hasPoured = true; setJuice(fillPct);
+    servedLevel = target;             // serveToTray reads this in customer mode
+    serveToTray();
+    if (step === 'tray') {
+      strawAdded = false; lemonAdded = false;
+      strawBox.style.pointerEvents = 'auto'; strawBox.classList.add('glow');
+      lemonBox.style.pointerEvents = 'auto'; lemonBox.classList.add('glow');
+    } else {
+      // finished drink (straw + lemon), draggable to the customer
+      strawAdded = true; lemonAdded = true;
+      strawBox.classList.remove('glow'); strawBox.style.pointerEvents = 'none';
+      lemonBox.classList.remove('glow'); lemonBox.style.pointerEvents = 'none';
+      if (servedSet) {
+        const g = servedSet.querySelector('.glassImg');
+        if (g) g.style.visibility = 'hidden';
+        servedSet.appendChild(makeCompositeImg(target, 'complete'));
+        servedSet.addEventListener('pointerdown', onServeDown);
+        servedSet.classList.add('draggable');
+      }
+    }
+  }
+}
+
+// Menu mirrors the CURRENT game flow: title → tutorial (ghost + dragon) →
+// customer mode (5 customers × half-then-full orders, up to 3 in line) → end.
 function buildDevMenu() {
   const list = document.getElementById('devList');
   if (!list) return;
@@ -3446,10 +3554,36 @@ function buildDevMenu() {
     parent.appendChild(b);
     return b;
   };
+  const addLabel = (parent, text) => {
+    const d = document.createElement('div');
+    d.className = 'devLabel';
+    d.textContent = text;
+    parent.appendChild(d);
+  };
+  const addGroup = (title) => {
+    const group = document.createElement('div');
+    group.className = 'devGroup';
+    addBtn(group, title + '  ▸', () => group.classList.toggle('open'), 'devHead');
+    const sub = document.createElement('div');
+    sub.className = 'devSub';
+    group.appendChild(sub);
+    list.appendChild(group);
+    return sub;
+  };
 
-  // global controls
   addBtn(list, '🏠 Title screen', () => { devGoToTitle(); close(); });
-  addBtn(list, '👥 Customer mode (up to 3)', () => {
+
+  // ── tutorial (the ghost round with the dragon host) ──
+  const tut = addGroup('🎓 Tutorial — ghost (FULL)');
+  addBtn(tut, '↪ Play from start',        () => { devGoToRound(0); close(); });
+  addBtn(tut, '① Empty glass — pour',     () => { devToPour(0);    close(); });
+  addBtn(tut, '② Filled — Check',         () => { devToCheck(0);   close(); });
+  addBtn(tut, '③ On tray — straw/lemon',  () => { devToTray(0);    close(); });
+  addBtn(tut, '④ Ready to serve (drag)',  () => { devToServe(0);   close(); });
+
+  // ── customer mode (the main game after the tutorial) ──
+  const cm = addGroup('👥 Customer mode (main game)');
+  addBtn(cm, '↪ Play from start', () => {
     devResetScene();
     titleDone = true;
     const t = document.getElementById('title'); if (t) t.style.display = 'none';
@@ -3457,7 +3591,18 @@ function buildDevMenu() {
     enterPairMode();
     close();
   });
+  [['half', 'Half-glass order'], ['full', 'Full-glass order']].forEach(([target, label]) => {
+    addLabel(cm, label);
+    addBtn(cm, '① Empty glass — pour',    () => { devPairJump(target, 'pour');  close(); });
+    addBtn(cm, '② Filled — Check',        () => { devPairJump(target, 'check'); close(); });
+    addBtn(cm, '③ On tray — straw/lemon', () => { devPairJump(target, 'tray');  close(); });
+    addBtn(cm, '④ Ready to serve (drag)', () => { devPairJump(target, 'serve'); close(); });
+  });
+  addLabel(cm, 'Cycle end');
+  addBtn(cm, '🏁 Last order — serve it → end screen', () => { devPairJump('full', 'serve', true); close(); });
+
   addBtn(list, '🏁 End screen', () => { devGoToEnd(); close(); });
+
   const skipBtn = addBtn(list, '', () => {});
   const paintSkip = () => {
     skipBtn.textContent = '⚡ Skip dialogue: ' + (skipDialogue ? 'ON' : 'OFF');
@@ -3465,23 +3610,6 @@ function buildDevMenu() {
   };
   skipBtn.onclick = (e) => { e.stopPropagation(); skipDialogue = !skipDialogue; paintSkip(); };
   paintSkip();
-
-  // one collapsible group per round, each with quick-jump states
-  ROUNDS.forEach((r, i) => {
-    const group = document.createElement('div');
-    group.className = 'devGroup';
-    addBtn(group, '▶ Round ' + (i + 1) + ' — ' + r.skin + ' (' + r.label + ')  ▸',
-           () => group.classList.toggle('open'), 'devHead');
-    const sub = document.createElement('div');
-    sub.className = 'devSub';
-    addBtn(sub, '↪ Play from start',         () => { devGoToRound(i); close(); });
-    addBtn(sub, '① Empty glass — pour',      () => { devToPour(i);    close(); });
-    addBtn(sub, '② Filled — Check',          () => { devToCheck(i);   close(); });
-    addBtn(sub, '③ On tray — straw/lemon',   () => { devToTray(i);    close(); });
-    addBtn(sub, '④ Ready to serve (drag)',   () => { devToServe(i);   close(); });
-    group.appendChild(sub);
-    list.appendChild(group);
-  });
 }
 buildDevMenu();
 // ════ end DEV screen switcher ════
