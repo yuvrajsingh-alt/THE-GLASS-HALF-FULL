@@ -533,17 +533,20 @@ body {
 .servedSet .compositeImg {
   position: absolute;
   left: 50%;
-  bottom: 0;
-  transform: translateX(-50%);
-  height: 135%;
+  /* --comp-h/--comp-b/--comp-cx are set per artwork (see COMPOSITE_POS in the JS)
+     so the GLASS inside each composite lands exactly on the plain glass footprint —
+     the glass must not move when a straw/lemon is added */
+  bottom: var(--comp-b, 0);
+  transform: translateX(var(--comp-cx, -50%));
+  height: var(--comp-h, 135%);
   width: auto;
   pointer-events: none;
   transform-origin: center bottom;
   animation: fullStrawIn 0.2s cubic-bezier(0.34,1.56,0.64,1);   /* quick, snappy pop-in */
 }
 @keyframes fullStrawIn {
-  0%   { opacity: 0; transform: translateX(-50%) translateY(-6%) scale(0.97); }
-  100% { opacity: 1; transform: translateX(-50%) translateY(0)    scale(1);   }
+  0%   { opacity: 0; transform: translateX(var(--comp-cx, -50%)) translateY(-6%) scale(0.97); }
+  100% { opacity: 1; transform: translateX(var(--comp-cx, -50%)) translateY(0)    scale(1);   }
 }
 #lemonBox {
   position: absolute;
@@ -2396,19 +2399,58 @@ const COMPOSITES = {
     complete: 'new assets/main bg/complete the half glass.svg'
   }
 };
+// Each composite SVG has different padding around the glass (the straw pokes up,
+// the lemon pokes left), so a one-size 135% would make the glass JUMP on every
+// swap. These offsets — measured from the glass paths inside each SVG — scale and
+// shift each composite so its glass lands exactly on the plain glass footprint
+// (full box height, bottom-aligned, horizontally centred).
+//   h  = image height (% of the servedSet box)
+//   b  = image bottom offset (% of the box)
+//   cx = translateX (% of the image's own width) putting the glass centre at box centre
+const COMPOSITE_POS = {
+  full: {
+    straw:    { h: '137.34%', b: '1.43%',  cx: '-31.97%' },
+    lemon:    { h: '137.25%', b: '1.51%',  cx: '-39.05%' },
+    complete: { h: '137.25%', b: '1.51%',  cx: '-39.05%' }
+  },
+  half: {
+    straw:    { h: '141.58%', b: '-0.62%', cx: '-31.31%' },
+    lemon:    { h: '141.58%', b: '-0.62%', cx: '-41.37%' },
+    complete: { h: '141.58%', b: '-0.62%', cx: '-41.37%' }
+  }
+};
+// build a composite <img> with its glass aligned to the plain glass footprint
+function makeCompositeImg(target, key) {
+  const img = document.createElement('img');
+  img.className = 'compositeImg';
+  img.src = (COMPOSITES[target] || COMPOSITES.full)[key];
+  const pos = (COMPOSITE_POS[target] || COMPOSITE_POS.full)[key];
+  img.style.setProperty('--comp-h',  pos.h);
+  img.style.setProperty('--comp-b',  pos.b);
+  img.style.setProperty('--comp-cx', pos.cx);
+  return img;
+}
 function compositeAdd(which) {            // which = 'straw' | 'lemon'
   if (!servedSet) return;
   const g = servedSet.querySelector('.glassImg');
-  if (g) g.style.visibility = 'hidden';   // composite depicts the whole glass — hide the plain one
   const both = strawAdded && lemonAdded;  // both boxes now tapped → completed drink
   const target = pairMode ? servedLevel : ROUNDS[level].target;   // pair mode: the drink's own level
-  const set = COMPOSITES[target] || COMPOSITES.full;
   const prev = servedSet.querySelector('.compositeImg');
-  if (prev) prev.remove();                // swap out the single-ingredient art
-  const img = document.createElement('img');
-  img.className = 'compositeImg';
-  img.src = both ? set.complete : set[which];
+  const img = makeCompositeImg(target, both ? 'complete' : which);
   servedSet.appendChild(img);
+  // the new composite pops in from opacity 0 (and may need a frame to decode), so
+  // keep the OLD art visible underneath until it has fully landed — hiding it up
+  // front left a blank gap for a few frames (the glass "blinked"). The artwork is
+  // footprint-aligned, so the overlap reads as a seamless crossfade.
+  const ready = img.decode ? img.decode().catch(() => {}) : Promise.resolve();
+  const popIn = new Promise(res => {
+    img.addEventListener('animationend', res, { once: true });
+    setTimeout(res, 350);                 // fallback in case the animation never fires
+  });
+  Promise.all([ready, popIn]).then(() => {
+    if (g) g.style.visibility = 'hidden'; // composite depicts the whole glass — hide the plain one
+    if (prev) prev.remove();              // swap out the single-ingredient art
+  });
   popSound();
   if (both) {
     // second ingredient in → ready to drag to the customer ("Juice is ready!" line removed)
@@ -3384,10 +3426,7 @@ function devToServe(n) {
   if (servedSet) {
     const g = servedSet.querySelector('.glassImg');
     if (g) g.style.visibility = 'hidden';   // composite depicts the whole glass — hide the plain one
-    const img = document.createElement('img');
-    img.className = 'compositeImg';
-    img.src = (COMPOSITES[r.target] || COMPOSITES.full).complete;
-    servedSet.appendChild(img);
+    servedSet.appendChild(makeCompositeImg(r.target, 'complete'));
     servedSet.addEventListener('pointerdown', onServeDown);
     servedSet.classList.add('draggable');
   }
