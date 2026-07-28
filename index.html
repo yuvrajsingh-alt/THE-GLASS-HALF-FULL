@@ -3,10 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>Pour the Juice</title>
+<title>Ready Set Serve!</title>
+<!-- inline favicon: a data: URI costs no request, and kills the /favicon.ico 404 that
+     otherwise fires on every single load -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a0f3a'/%3E%3Cpath d='M9 7h14l-1.6 17.5a2.4 2.4 0 0 1-2.4 2.2h-6a2.4 2.4 0 0 1-2.4-2.2z' fill='%23F0EDE6'/%3E%3Cpath d='M10.1 13h11.8l-1 11.4a2.4 2.4 0 0 1-2.4 2.2h-5a2.4 2.4 0 0 1-2.4-2.2z' fill='%23F77ADE'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<!-- only the weights the page actually renders (500/600/700/800); 400 and 900 were requested
+     but never used, so they were dropped from the font request -->
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700;800&display=swap" rel="stylesheet">
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -363,12 +368,14 @@ body {
   pointer-events: none;
 }
 /* completely-full look: swap the drawn glass (body + rising liquid + half-line) for the
-   polished full-glass art. Only shown when #glass has .full (fillPct === 100). */
+   polished full-glass art. Driven by the .glassIsFull CLASS (not the #glass id) so that
+   CLONES of the glass — the one served onto the tray, the drag-hint ghost — show the same
+   art without needing an external image file. */
 .glassFullArt { display: none; }
-#glass.full .glassFullArt { display: block; }
-#glass.full > path,
-#glass.full > g,
-#glass.full > line { visibility: hidden; }
+.glassIsFull > .glassFullArt { display: block; }
+.glassIsFull > path,
+.glassIsFull > g,
+.glassIsFull > line { visibility: hidden; }
 /* tutorial highlight — empty glass pulses with a golden glow */
 #glass.glow { animation: glassGlow 0.9s ease-in-out infinite; transform-origin: center bottom; }
 @keyframes glassGlow {
@@ -406,9 +413,6 @@ body {
               top  0.85s cubic-bezier(0.5,-0.25,0.6,1);
 }
 .servedSet .glassImg { position: absolute; inset: 0; width: 100%; height: 100%; }
-/* the dedicated full-glass art is a bitmap-ish <img>, not the inline SVG clone — fit it
-   inside the same box, bottom-aligned & centred, so it occupies the identical footprint */
-.servedSet .fullGlassArt { object-fit: contain; object-position: center bottom; }
 .servedSet.draggable { pointer-events: auto; cursor: grab; z-index: 30; touch-action: none; }
 .servedSet.draggable:active { cursor: grabbing; }
 .servedSet.hintBob { animation: hintBob 1s ease-in-out infinite; }
@@ -441,6 +445,29 @@ body {
   10%      { transform: translate(calc(var(--gdx,-100%) * 0.08), calc(var(--gdy,-230%) * 0.08)) scale(0.97); opacity: 0.55; }
   80%      { transform: translate(calc(var(--gdx,-100%) * 0.9),  calc(var(--gdy,-230%) * 0.9))  scale(0.8);  opacity: 0.45; }
   95%,100% { transform: translate(var(--gdx,-100%), var(--gdy,-230%)) scale(0.75); opacity: 0; }
+}
+
+/* drag hint for the FILLED machine glass: a faint clone drifts from the machine to the
+   tray on a loop, showing where to drop it (replaces the hand nudge on this step).
+   --ggx/--ggy = the full machine→tray journey, measured live in showGlassGhost() */
+.glassGhost {
+  position: absolute;
+  left: 20.24%;
+  top: 76.79%;
+  width: 6.7%;
+  height: 15.2%;
+  z-index: 9;                  /* above the counter, below the dragged glass (z40) */
+  pointer-events: none;
+  opacity: 0;
+  filter: drop-shadow(0 6px 10px rgba(0,0,0,0.25));
+  animation: glassGhostDrift 2.2s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+@keyframes glassGhostDrift {
+  0%       { transform: translate(0,0) scale(1); opacity: 0; }
+  10%      { transform: translate(calc(var(--ggx,300%) * 0.08), calc(var(--ggy,-30%) * 0.08)) scale(0.98); opacity: 0.55; }
+  80%      { transform: translate(calc(var(--ggx,300%) * 0.9),  calc(var(--ggy,-30%) * 0.9))  scale(0.85); opacity: 0.45; }
+  95%,100% { transform: translate(var(--ggx,300%), var(--ggy,-30%)) scale(0.8); opacity: 0; }
 }
 
 /* ── juice stream (nozzle → glass) — flowing liquid column ── */
@@ -592,6 +619,15 @@ body {
   pointer-events: none;
   filter: drop-shadow(0 8px 14px rgba(0,0,0,0.4));
 }
+/* the tray glows gently while it is the drop target for the filled glass */
+#tray.glow { animation: trayGlow 1.4s ease-in-out infinite; }
+@keyframes trayGlow {
+  0%,100% { filter: drop-shadow(0 8px 14px rgba(0,0,0,0.4))
+                    drop-shadow(0 0 6px rgba(255,215,0,0.35)); }
+  50%     { filter: drop-shadow(0 8px 14px rgba(0,0,0,0.4))
+                    drop-shadow(0 0 20px rgba(255,215,0,0.9))
+                    drop-shadow(0 0 34px rgba(255,190,80,0.55)); }
+}
 
 /* ── coin reward (coins.svg pile placed on the counter) ── */
 #coinPile {
@@ -636,7 +672,7 @@ body {
   top: 55.7%;
   width: 6%;
   aspect-ratio: 0.5;
-  background: url('new assets/main bg/pour buttone.svg') no-repeat center / contain;
+  background: url('new assets/main bg/pour buttone.webp') no-repeat center / contain;
   border: none;
   cursor: pointer;
   z-index: 12;
@@ -659,8 +695,7 @@ body {
 /* pointer-driven game buttons: no browser focus ring — shift+click / keyboard-style
    activation otherwise draws a rectangle around the button's (invisible) box */
 #pourBtn:focus, #pourBtn:focus-visible,
-#checkBtn:focus, #checkBtn:focus-visible,
-#nextBtn:focus, #nextBtn:focus-visible { outline: none; }
+#checkBtn:focus, #checkBtn:focus-visible { outline: none; }
 
 @keyframes pulseRing {
   0%   { transform: scale(0.85); opacity: 0.9; }
@@ -700,36 +735,11 @@ body {
   100% { transform: translate(180%, -150%) scale(1);    }
 }
 
-/* ── instruction text box (TEXT BOX.png banner) ── */
-#banner {
-  position: absolute;
-  top: 1%;
-  left: 1.25%;
-  width: 97.5%;
-  aspect-ratio: 1873 / 188;
-  z-index: 20;
-  pointer-events: none;
-}
-#bannerBg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
-#bannerText {
-  position: absolute;
-  top: 8%; bottom: 8%;
-  left: 12%; right: 6%;
-  display: flex;
-  align-items: center;
-  color: #fff;
-  font-size: 2.1cqw;
-  font-weight: 900;
-  text-shadow: 2px 3px 6px rgba(0,0,0,0.55);
-  line-height: 1.2;
-}
-#bannerText.typing::after {
-  content: '|';
-  color: #ffd700;
-  animation: caretBlink 0.6s step-end infinite;
-}
+/* (the old #banner / #bannerBg / #bannerText instruction box was replaced by the dragon's
+   speech bubble — its rules had no matching markup or JS and have been removed) */
 
-/* ── Check button (check button.png on the tray) ── */
+/* ── Check button REMOVED — the player now drags the filled glass onto the tray.
+   Kept in the DOM (some code still toggles its style) but never shown. ── */
 #checkBtn {
   position: absolute;
   left: 57.5%;
@@ -740,39 +750,31 @@ body {
   padding: 0;
   cursor: pointer;
   z-index: 13;
-  display: none;
+  display: none !important;   /* the tap-to-check button is gone; dragging replaces it */
   transition: transform 0.12s, filter 0.12s, opacity 0.3s;
 }
+/* the filled machine glass becomes grabbable so it can be dragged onto the tray */
+#glass.grabbable { pointer-events: auto; cursor: grab; touch-action: none; }
+#glass.grabbable:active { cursor: grabbing; }
+/* while a drink is out being served the slot is empty; a fresh glass re-appears
+   (drops into the slot) the moment the reward coins vanish */
+#glass.gone { opacity: 0; pointer-events: none; }
+#glass.appearIn { transform-origin: center bottom; animation: glassAppear 0.5s cubic-bezier(0.34,1.56,0.64,1) both; }
+@keyframes glassAppear {
+  0%   { opacity: 0; transform: translateY(-10%) scale(0.7); }
+  60%  { opacity: 1; }
+  100% { opacity: 1; transform: translateY(0)   scale(1);   }
+}
+/* while being dragged, lift it above the tray (z8) and straw/lemon boxes (z7) so it
+   doesn't slide behind them */
+#glass.dragging { z-index: 40; }
 #checkBtn img { width: 100%; display: block; }
 #checkBtn:not(:disabled):hover { transform: scale(1.07); filter: brightness(1.12); }
 #checkBtn:not(:disabled):active { transform: scale(0.95); }
 #checkBtn:disabled { opacity: 0.4; cursor: default; }
 
 /* ── Next / Play-again button ── */
-#nextBtn {
-  position: absolute;
-  bottom: 4%;
-  left: 50%;
-  transform: translateX(-50%);
-  background: linear-gradient(180deg, #ffb300, #e65100);
-  color: #fff;
-  font-size: 2.2cqw;
-  font-weight: 900;
-  font-family: inherit;
-  padding: 1.1% 5%;
-  border-radius: 60px;
-  border: 4px solid #ffd700;
-  cursor: pointer;
-  box-shadow: 0 8px 26px rgba(0,0,0,0.5), 0 0 24px rgba(255,179,0,0.6);
-  letter-spacing: 1px;
-  z-index: 50;
-  display: none;
-  animation: startPulse 1.4s ease-in-out infinite;
-}
-@keyframes startPulse {
-  0%,100% { transform: translateX(-50%) scale(1);    }
-  50%     { transform: translateX(-50%) scale(1.07); }
-}
+/* (#nextBtn and its startPulse keyframes removed — no matching markup or JS) */
 
 /* ── game-over screen (after the full customer cycle: 5 half + 5 full) ── */
 #gameEnd {
@@ -840,6 +842,54 @@ body {
   padding: 0;
   animation: playPulse 1.2s ease-in-out infinite;
 }
+/* â”€â”€ boot preloader â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   Play is HIDDEN until every asset is fetched; a themed bar sits in its place and the
+   button pops in at 100%. leaveTitle() is guarded too, so keyboard / programmatic
+   starts also wait. */
+#playBtn { visibility: hidden; }
+#playBtn.ready {
+  visibility: visible;
+  animation: playPop 0.5s cubic-bezier(0.34,1.56,0.64,1) both,
+             playPulse 1.2s ease-in-out 0.5s infinite;
+}
+@keyframes playPop {
+  0%   { transform: scale(0.3) rotate(-8deg); opacity: 0; }
+  100% { transform: scale(1)   rotate(0deg);  opacity: 1; }
+}
+#loadWrap {
+  position: absolute;
+  left: 50%; top: 71.5%;
+  transform: translateX(-50%);
+  width: 34%;
+  z-index: 71;
+  display: flex; flex-direction: column; align-items: center;
+  gap: 1.3cqw;
+  transition: opacity 0.4s ease;
+}
+#loadWrap.done { opacity: 0; pointer-events: none; }
+#loadTrack {
+  width: 100%; height: 2.4cqw;
+  border-radius: 999px;
+  background: rgba(24,8,36,0.55);
+  border: 0.3cqw solid rgba(255,255,255,0.38);
+  overflow: hidden;
+  box-shadow: 0 0.5cqw 1.2cqw rgba(0,0,0,0.45);
+}
+#loadFill {
+  height: 100%; width: 0%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #B8156F, #F77ADE 62%, #FF9EDD);
+  box-shadow: 0 0 1.2cqw rgba(247,122,222,0.85);
+  transition: width 0.25s ease;
+}
+#loadPct {
+  font-family: 'Poppins', system-ui, sans-serif;   /* Baloo 2 is never loaded — use the real font */
+  font-weight: 800;
+  font-size: 2cqw;
+  color: #fff;
+  letter-spacing: 0.06em;
+  text-shadow: 0 0.22cqw 0 #B8156F, 0 0.4cqw 1cqw rgba(0,0,0,0.6);
+}
 /* soft grounding shadow + a warm golden halo that breathes with the scale pulse */
 @keyframes playPulse {
   0%,100% {
@@ -853,8 +903,6 @@ body {
             drop-shadow(0 0 24px rgba(255,205,70,0.85));
   }
 }
-/* the post-game "Play Again" button sits a little lower than the initial Play button */
-.playBtn.again { top: 74%; }
 @keyframes introOut { 0% { opacity: 1; } 100% { opacity: 0; } }
 
 /* ── roller shutter transition (title → game) ── */
@@ -950,7 +998,7 @@ body {
   border-left: 2px solid #4a2d63;
 }
 #devList .devGroup.open .devSub { display: block; }
-#devList .devSub button { font-size: 12px; padding: 5px 9px; background: #3a2550; }
+#devList .devSub button { font-size: 12px; padding: 5px 9px; background: #9361c9; }
 /* small section heading inside a submenu (e.g. "Half-glass order") */
 #devList .devLabel {
   margin: 7px 0 2px; padding: 0 2px;
@@ -972,7 +1020,7 @@ body {
 <div id="gc">
 
   <!-- ── circus background ── -->
-  <img id="bgFull" src="new assets/YUV.BG.svg" alt="">
+  <img id="bgFull" src="new assets/YUV.BG.webp" alt="">
 
   <!-- ── client (monster behind the counter) ── -->
   <img id="client" src="new assets/ghost.webp" alt="">
@@ -983,17 +1031,17 @@ body {
 
   <!-- ── thought bubble (client's order) ── -->
   <div id="thought">
-    <img id="thoughtBg" src="new assets/dailoge box.svg" alt="">
+    <img id="thoughtBg" src="new assets/dailoge box.webp" alt="">
     <div id="thoughtInner"></div>
   </div>
 
   <!-- ── order bubbles for the extra customer slots ── -->
   <div id="thought2">
-    <img id="thoughtBg2" src="new assets/dailoge box.svg" alt="">
+    <img id="thoughtBg2" src="new assets/dailoge box.webp" alt="">
     <div id="thoughtInner2"></div>
   </div>
   <div id="thought3">
-    <img id="thoughtBg3" src="new assets/dailoge box.svg" alt="">
+    <img id="thoughtBg3" src="new assets/dailoge box.webp" alt="">
     <div id="thoughtInner3"></div>
   </div>
 
@@ -1125,7 +1173,7 @@ body {
   <button id="pourBtn" onclick="pour()" aria-label="Pour juice"></button>
 
   <!-- ── hand pointer ── -->
-  <img id="hand" src="new assets/hand nudge.svg" alt="">
+  <img id="hand" src="new assets/hand nudge.webp" alt="">
 
 
   <!-- ── Check button ── -->
@@ -1138,9 +1186,10 @@ body {
   <!-- ── game-over screen: celebration video + confetti, then back to the title screen ── -->
   <div id="gameEnd">
     <img id="endBg" src="new assets/game thumbnail 9 (1).webp" alt="Perfect Pour — Complete!">
-    <video id="endVideo" preload="auto" playsinline>
+    <!-- preload="none": the boot preloader streams this and hands it a blob: URL (no double
+         download). WebM = VP9 video + Opus audio â€” Chrome/Edge/Firefox and Safari 14.1+. -->
+    <video id="endVideo" preload="none" playsinline>
       <source src="new assets/cheers_end.webm" type="video/webm">
-      <source src="new assets/Cheers_glass_and_cheerfull_202607081219_gwr_video_mvp (1).mp4" type="video/mp4">
     </video>
     <div id="confetti" aria-hidden="true"></div>
   </div>
@@ -1148,7 +1197,12 @@ body {
   <!-- ── title screen (only the Play button starts the game) ── -->
   <div id="title">
     <img id="titleImg" src="new assets/game thumbnail 9 (1).webp" alt="The Glass Half Full">
-    <img class="playBtn" id="playBtn" src="assets map/start-button.svg" alt="Play" onclick="leaveTitle()">
+    <img class="playBtn" id="playBtn" src="assets map/start-button.webp" alt="Play" onclick="leaveTitle()">
+    <!-- boot progress bar: sits where Play will appear, removed once everything is fetched -->
+    <div id="loadWrap" role="progressbar" aria-label="Loading" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+      <div id="loadTrack"><div id="loadFill"></div></div>
+      <div id="loadPct">0%</div>
+    </div>
   </div>
 
   <!-- ── roller shutter (title → game transition) ── -->
@@ -1202,18 +1256,18 @@ document.addEventListener('dragstart', e => e.preventDefault());
 // Preloading every image into the browser cache makes all swaps instant.
 const PRELOAD_ASSETS = [
   // glass composites (swapped in as straw/lemon are added) — the main cause of gaps
-  'new assets/full glass with  strow.svg',
-  'new assets/full glass with lemon.svg',
-  'new assets/complete full glass.svg',
-  'new assets/main bg/half glass with strow ..svg',
-  'new assets/main bg/half glass with lemon.svg',
-  'new assets/main bg/complete the half glass.svg',
+  'new assets/full glass with  strow.webp',
+  'new assets/full glass with lemon.webp',
+  'new assets/complete full glass.webp',
+  'new assets/main bg/half glass with strow ..webp',
+  'new assets/main bg/half glass with lemon.webp',
+  'new assets/main bg/complete the half glass.webp',
   // ingredients that fly into the glass
   'new assets/strow.webp',
   'new assets/lemon.svg',
   // order bubbles (full vs half art)
-  'new assets/dailoge box.svg',
-  'new assets/dailoge box for half glass.svg',
+  'new assets/dailoge box.webp',
+  'new assets/dailoge box for half glass.webp',
   // customers
   'new assets/ghost.webp',
   'assets map/client1.webp',
@@ -1224,11 +1278,10 @@ const PRELOAD_ASSETS = [
   // reward, title & end screens
   'new assets/coins.svg',
   'new assets/game thumbnail 9 (1).webp',
-  'assets map/start-button.svg',
-  'new assets/play again.webp',
+  'assets map/start-button.webp',
   'new assets/splash.svg',
   // scene & props
-  'new assets/YUV.BG.svg',
+  'new assets/YUV.BG.webp',
   'new assets/main bg/new counter.webp',
   'new assets/Dragon.webp',
   'new assets/main bg/pink pour machine.webp',
@@ -1236,11 +1289,79 @@ const PRELOAD_ASSETS = [
   'new assets/main bg/LEMON BOX.webp',
   'new assets/main bg/TRAY.webp',
   'new assets/main bg/check button.webp',
-  'new assets/main bg/pour buttone.svg',
-  'new assets/hand nudge.svg'
+  'new assets/main bg/pour buttone.webp',
+  'new assets/hand nudge.webp'
 ];
 // keep the Image objects referenced so they aren't garbage-collected before they finish loading
-const _preloadedImages = PRELOAD_ASSETS.map(src => { const im = new Image(); im.src = src; return im; });
+// Real on-disk byte sizes, so the loading bar is weighted by actual transfer cost rather
+// than file count (refined at runtime by each response's Content-Length).
+// Regenerate with:  stat -c %s <file>   for every entry.
+const ASSET_BYTES = {
+  'assets map/All charaters 3.webp': 32750,
+  'assets map/All charaters 4.webp': 35482,
+  'assets map/client 3.webp': 100902,
+  'assets map/client1.webp': 30948,
+  'assets map/client4-sprite.webp': 43998,
+  'assets map/start-button.webp': 23236,
+  'audio/Drag the glass to the tray.ogg': 26385,
+  'audio/Drag the juice to the customer.ogg': 28710,
+  'audio/Let us serve him.ogg': 17734,
+  'audio/Look! Our first customer.ogg': 27871,
+  'audio/Now, it is your turn!.ogg': 24182,
+  'audio/Tap the Pour button 2 times.ogg': 31513,
+  'audio/Tap the Pour button 4 times.ogg': 31650,
+  'audio/Tap the button to pour juice.ogg': 26360,
+  'audio/The customers will be arriving soon!.ogg': 29698,
+  'audio/The glass is now full.ogg': 26889,
+  'audio/The glass is now half full.ogg': 27893,
+  'audio/Welcome to the Spooky Juice Stall!.ogg': 36838,
+  'new assets/Dragon.webp': 747408,
+  'new assets/YUV.BG.webp': 118404,
+  'new assets/cheers_end.webm': 678805,
+  'new assets/coins.svg': 13915,
+  'new assets/complete full glass.webp': 11088,
+  'new assets/dailoge box for half glass.webp': 10382,
+  'new assets/dailoge box.webp': 10122,
+  'new assets/full glass with  strow.webp': 9968,
+  'new assets/full glass with lemon.webp': 7882,
+  'new assets/game thumbnail 9 (1).webp': 160610,
+  'new assets/ghost.webp': 42204,
+  'new assets/hand nudge.webp': 9122,
+  'new assets/lemon.svg': 21146,
+  'new assets/main bg/LEMON BOX.webp': 18098,
+  'new assets/main bg/Strow box.webp': 22736,
+  'new assets/main bg/TRAY.webp': 44254,
+  'new assets/main bg/check button.webp': 3874,
+  'new assets/main bg/complete the half glass.webp': 11130,
+  'new assets/main bg/half glass with lemon.webp': 7188,
+  'new assets/main bg/half glass with strow ..webp': 9332,
+  'new assets/main bg/new counter.webp': 67646,
+  'new assets/main bg/pink pour machine.webp': 388864,
+  'new assets/main bg/pour buttone.webp': 21168,
+  'new assets/splash.svg': 16841,
+  'new assets/strow.webp': 43796,
+  'sxf/an sfx.ogg': 802375,
+  'sxf/cash-register..ogg': 25798,
+  'sxf/coins disappers.ogg': 44338,
+  'sxf/gamebonus.ogg': 36155,
+  'sxf/jump.ogg': 20382,
+  'sxf/pour.ogg': 80388,
+  'sxf/transation.ogg': 30278,
+  'sxf/worng.ogg': 19197
+};
+
+// Audio the preloader feeds. preload='none' keeps the browser from fetching these itself â€”
+// the preloader streams the bytes once and hands each element a blob: URL, so there is
+// never a double download.
+const AUDIO_REG = [];
+function regAudio(src) {
+  const a = new Audio(src);
+  a.preload = 'none';
+  AUDIO_REG.push({ el: a, src: src });
+  return a;
+}
+// set true by bootPreload() once everything is in; leaveTitle() refuses to start before then
+let assetsReady = false;
 
 // ── rounds ──────────────────────────────────────────────────
 const ROUNDS = [
@@ -1359,9 +1480,10 @@ function armPourNudge() {
     const active = activeCustomer();
     const want = active ? active.target : 'full';
     const goalReached = (want === 'half') ? (fillPct >= HALF_MIN) : (fillPct >= FULL_MIN);
-    // glass already matches the order → the next step is Check: nudge the Check button
-    if (drinkLevel() === want && checkBtn.style.display !== 'none' && !checkBtn.disabled) {
-      handToCenterOf(checkBtn, true, 0.4);   // fingertip ON the button, below its "Check" label
+    // glass already matches the order → the next step is to drag it onto the tray
+    if (drinkLevel() === want && glassDraggable) {
+      hideHand();
+      showGlassGhost();                      // ghost glass drifts to the glowing tray (no hand)
       idleHandShown = true;
       return;
     }
@@ -1383,34 +1505,34 @@ document.addEventListener('pointerdown', noteIdleActivity, true);
 document.addEventListener('pointermove', noteIdleActivity, { capture: true, passive: true });
 
 // ── sound (only worng.mp3 ships; pour/win use WebAudio beeps) ──
-const wrongSound = new Audio('sxf/worng.mp3');
-wrongSound.preload = 'auto';
+const wrongSound = regAudio('sxf/worng.ogg');
 // dropped the drink on the wrong customer
-const jumpSound = new Audio('sxf/jump.mp3');
-jumpSound.preload = 'auto';
-const pourSound = new Audio('sxf/pour.mp3');
-pourSound.preload = 'auto';
-const bonusSound = new Audio('sxf/gamebonus.mp3');
-bonusSound.preload = 'auto';
+const jumpSound = regAudio('sxf/jump.ogg');
+const pourSound = regAudio('sxf/pour.ogg');
+const bonusSound = regAudio('sxf/gamebonus.ogg');
 bonusSound.volume = 0.25;             // 25% volume
 // coin/cash-register sound — plays when the coin pile APPEARS on the counter (see rewardCoins)
-const serveSound = new Audio('sxf/cash-register..mp3');
-serveSound.preload = 'auto';
+const serveSound = regAudio('sxf/cash-register..ogg');
 serveSound.volume = 0.5;             // 50% quieter
 // sound when the drink is dragged & dropped onto (delivered to) a customer
-const coinsGoneSound = new Audio('sxf/coins disappers.mp3');
-coinsGoneSound.preload = 'auto';
+const coinsGoneSound = regAudio('sxf/coins disappers.ogg');
+
+// music sting for the scene transition (the pink juice-splash wipe)
+const transitionSound = regAudio('sxf/transation.ogg');
+transitionSound.volume = 0.7;
 
 // ── title-screen music (plays on the thumbnail; turns off when Play is tapped) ──
-const titleMusic = new Audio('sxf/star bg musics.mp3');
-titleMusic.loop = true;
-titleMusic.volume = 0.5;
-titleMusic.preload = 'auto';
+// No title track ships yet: the old 'sxf/star bg musics.mp3' reference 404'd on every
+// load while never playing. Drop a track in sxf/ and point TITLE_MUSIC_SRC at it.
+const TITLE_MUSIC_SRC = null;                  // e.g. 'sxf/title-music.ogg'
+const titleMusic = TITLE_MUSIC_SRC ? new Audio(TITLE_MUSIC_SRC) : null;
+if (titleMusic) { titleMusic.loop = true; titleMusic.volume = 0.5; titleMusic.preload = 'auto'; }
 function playTitleMusic() {
-  if (titleDone) return;                       // game started (Play tapped) — stay off
+  if (!titleMusic || titleDone) return;                       // game started (Play tapped) — stay off
   try { titleMusic.play().catch(() => {}); } catch (e) {}
 }
 function stopTitleMusic() {
+  if (!titleMusic) return;
   try { titleMusic.pause(); titleMusic.currentTime = 0; } catch (e) {}
 }
 // try to start on load; if the browser blocks autoplay, start on the first interaction
@@ -1418,10 +1540,9 @@ playTitleMusic();
 document.addEventListener('pointerdown', playTitleMusic, { once: true });
 
 // ── gameplay music (starts when Play is tapped; loops through the game) ──
-const gameMusic = new Audio('sxf/an sfx.mp3');
+const gameMusic = regAudio('sxf/an sfx.ogg');
 gameMusic.loop = true;
 gameMusic.volume = 0.135;  // a further 10% quieter (was 0.15)
-gameMusic.preload = 'auto';
 function playGameMusic() {
   try { gameMusic.currentTime = 0; gameMusic.play().catch(() => {}); } catch (e) {}
 }
@@ -1433,36 +1554,30 @@ function stopGameMusic() {
 // Each dialogue line maps to a recording in /audio (filename = the line text).
 // Lines are queued: a line's text + narration show together, and the NEXT line
 // only appears once the current line's audio has completely finished playing.
+// key = the exact line the game speaks; value = the clip's filename in /audio (no .ogg).
+// Only lines that have a recording are listed — any line not here just shows silently.
 const VOICE = {
-  'The customers are arriving!':            'The customers are arriving!',
-  'The first customer wants a full glass.': 'The first customer wants a full glass.',
-  'This customer wants a full glass.':      'The first customer wants a full glass.',  // design wording → same clip
-  'This is an empty glass.':                'This is an empty glass.',
-  'Tap the button to pour juice.':          'Tap the button to pour juice.',
-  'Tap the button to pour the juice.':      'Tap the button to pour juice.',   // wording variant → same clip
-  'Tap the Check button.':                  'Tap the Check button.',
-  'Tap on the Check button.':               'Tap the Check button.',           // wording variant → same clip
-  'The glass is now full.':                 'The glass is now full.',
-  'Tap again!':                             'Tap again!',
-  'The glass is now half full.':            'The glass is now half full.',
-  'The glass is now half full. Tap on the Check button.': 'The glass is now half full.',
-  'Keep pouring!':                          'Keep pouring!',
-  'Tap again to pour more juice.':          'Tap again to pour more juice.',
-  'Tap on the straws.':                     'Tap on the straws.',
-  'Tap on the lemons.':                     'Tap on the lemons.',
-  'Juice is ready!':                        'The juice is ready to be served!',   // new wording → existing clip
-  'Drag the juice to the customer.':        'Drag the juice to the customer.',
+  'Welcome to the Spooky Juice Stall!':     'Welcome to the Spooky Juice Stall!',
+  'The customers will be arriving soon!':   'The customers will be arriving soon!',
+  'Look! Our first customer.':              'Look! Our first customer',
+  'Let us serve him.':                      'Let us serve him',
+  'Tap the button to pour juice.':          'Tap the button to pour juice',
+  'The glass is now full.':                 'The glass is now full',
+  'The glass is now half full.':            'The glass is now half full',
+  'The glass is now half full. Drag the glass to the tray.': 'The glass is now half full',  // combined line → announce the state
+  'Drag the glass to the tray.':            'Drag the glass to the tray',
+  'Drag the juice to the customer.':        'Drag the juice to the customer',
   'Now, it is your turn!':                  'Now, it is your turn!',
-  'Yay! You poured a full glass of juice.': 'Yay! You poured a full glass of juice.',
-  'Yay! You poured a full glass. 🎉':       'Yay! You poured a full glass of juice.'  // win variant → same clip
+  'Tap the Pour button 2 times.':           'Tap the Pour button 2 times',
+  'Tap the Pour button 4 times.':           'Tap the Pour button 4 times'
 };
 // preload one Audio per unique clip
 const voiceClips = {};
 Object.keys(VOICE).forEach(line => {
   const file = VOICE[line];
   if (!voiceClips[file]) {
-    const a = new Audio('audio/' + encodeURIComponent(file) + '.mp3');
-    a.preload = 'auto';
+    const a = regAudio('audio/' + encodeURIComponent(file) + '.ogg');
+    // preload stays 'none' (regAudio): the preloader streams it and swaps in a blob
     voiceClips[file] = a;
   }
 });
@@ -1509,7 +1624,11 @@ function appendDragonRuns(parent, chars, bold, start, end) {
     k = j;
   }
 }
-function typeDragon(text) {
+// How slowly the dragon "speaks": ms per character. Higher = slower, calmer reveal.
+const TYPE_MS = 135;
+// `maxMs` (optional) = how long the line will stay up (its voice clip's length). The reveal
+// is sped up only if the slow pace wouldn't finish in time, so text is never cut off.
+function typeDragon(text, maxMs) {
   stopTyping();
   if (!bannerTxt) return;
   const chars = Array.from(text || '');     // split by code point so emoji aren't broken mid-type
@@ -1527,6 +1646,10 @@ function typeDragon(text) {
     }
   };
   render();
+  // pace: the slow default, unless the narration is shorter — then fit the reveal inside it
+  // (finishing at ~85% of the clip) so the sentence is always complete before it advances
+  let delay = TYPE_MS;
+  if (maxMs && chars.length) delay = Math.min(delay, Math.max(30, (maxMs * 0.85) / chars.length));
   typeTimer = setInterval(() => {
     i++;
     render();
@@ -1534,7 +1657,7 @@ function typeDragon(text) {
       stopTyping();
       bannerTxt.classList.remove('typing');         // line fully typed → caret disappears
     }
-  }, 75);
+  }, delay);
 }
 // these "keep pouring" lines show NO dialogue box — just a hand nudge on the POUR button
 const HAND_ONLY = {
@@ -1549,9 +1672,11 @@ const NO_BOX = {
   'Tap on the lemons.': true
 };
 
-// silent lines (no recording) / playback failures linger for a readable beat
+// silent lines (no recording) / playback failures linger for a readable beat — long enough
+// for the slow typewriter to finish the whole sentence, plus a moment to read it
 function estimateDuration(text) {
-  return Math.min(6500, Math.max(2200, (text ? text.length : 0) * 115));
+  const len = text ? text.length : 0;
+  return Math.min(9500, Math.max(2400, len * TYPE_MS + 800));
 }
 
 function enqueueDialogue(text, onDone, onEnd) {
@@ -1564,6 +1689,11 @@ function pumpDialogue() {
   const item = voiceQueue.shift();
   if (!item) return;
   voiceBusy = true;
+
+  // resolve the narration first, so the typewriter can pace itself to the clip's length
+  const file = (dragonGone || skipDialogue) ? null : VOICE[item.text];
+  const clip = file ? voiceClips[file] : null;
+  const clipMs = (clip && isFinite(clip.duration) && clip.duration > 0) ? clip.duration * 1000 : 0;
 
   // show this line now (once the dragon host has left, no bubble/voice appears)
   if (!dragonGone) {
@@ -1583,7 +1713,7 @@ function pumpDialogue() {
       if (bannerEl)  bannerEl.classList.add('show');
       if (bannerTxt) {
         if (skipDialogue) { stopTyping(); bannerTxt.classList.remove('typing'); bannerTxt.textContent = item.text; }
-        else              typeDragon(item.text);   // typewriter reveal + blinking caret + click SFX
+        else              typeDragon(item.text, clipMs);   // typewriter reveal, paced to the narration
       }
       hideHand();                            // a normal box line — clear any leftover pour hand
     }
@@ -1605,9 +1735,7 @@ function pumpDialogue() {
     pumpDialogue();
   };
 
-  const file = (dragonGone || skipDialogue) ? null : VOICE[item.text];
-  const clip = file ? voiceClips[file] : null;
-  if (clip) {
+  if (clip) {                                 // (file/clip resolved at the top of this function)
     currentVoice = clip;
     clip.onended = advance;                 // ← the next line waits for THIS to fire
     // safety net so a missing 'ended' event can never freeze the dialogue forever
@@ -1891,7 +2019,7 @@ function playSplashTransition() {
   splat.style.opacity   = '1';
   splat.style.transform = 'translate(-50%,-50%) scale(0)';
   fx.classList.add('run');
-  splashSound();
+  try { transitionSound.currentTime = 0; transitionSound.play().catch(() => {}); } catch (e) {}   // transition music
 
   // the juice splat bursts from the centre and swallows the screen
   splat.animate([
@@ -1987,11 +2115,10 @@ function initRound() {
   if (bannerEl) bannerEl.classList.remove('introPos');
 
   setJuice(0);
-  glassEl.classList.remove('glow');   // clear any leftover tutorial highlight
+  glassEl.classList.remove('glow', 'gone', 'appearIn');   // fresh round → glass visible, no highlight
+  disableGlassDrag();                 // empty glass → not draggable until poured
   clearServed();
   pourBtn.disabled = true;            // every interaction starts locked, unlocked by its instruction
-  checkBtn.style.display = 'none';
-  checkBtn.disabled = true;
   removePulse();
   handEl.style.display = 'none';
   clearInterval(bannerTimer);
@@ -2007,8 +2134,8 @@ function initRound() {
   // half-glass customers get their own order bubble art
   const thoughtBg = document.getElementById('thoughtBg');
   if (thoughtBg) thoughtBg.src = (r.target === 'half')
-    ? 'new assets/dailoge box for half glass.svg'
-    : 'new assets/dailoge box.svg';
+    ? 'new assets/dailoge box for half glass.webp'
+    : 'new assets/dailoge box.webp';
   // the order is shown by the bubble art itself — no text overlay
   const thoughtInner = document.getElementById('thoughtInner');
   if (thoughtInner) { thoughtInner.textContent = ''; thoughtInner.style.fontSize = ''; }
@@ -2020,6 +2147,8 @@ function initRound() {
 // ── title ─────────────────────────────────────────────────────
 function leaveTitle() {
   if (titleDone) return;
+  if (!assetsReady) return;        // still preloading â€” the button is hidden, but this also
+                                   // blocks keyboard / programmatic / dev starts
   titleDone = true;
   popSound();                      // pop on the start button
   stopTitleMusic();                // Play tapped → title music off…
@@ -2103,7 +2232,8 @@ function startGame() {
 
 // hand positions for each guided step
 function placeHand()       { moveHand('22%', '69%'); }     // POUR button
-function handToCheck()     { if (phase !== 'play') return; moveHand('61%', '90%'); }   // Check button (never after Check was pressed)
+// (the "drag the glass to the tray" step uses a ghost glass + glowing tray, not a hand —
+//  see showGlassGhost())
 // centre the hand nudge exactly on a target element (measured live → exact at any size)
 // `force` shows the hand without a dialogue line (used by the idle nudges)
 // `dyFrac` shifts the hand DOWN by that fraction of the target's height, so the
@@ -2154,11 +2284,11 @@ function pour() {
 
   hasPoured = true;
   removePulse();
-  // solo rounds: the Check button appears (usable) as soon as they pour.
-  // tutorial: it stays HIDDEN until the glass is full — the cap block below shows it
-  // together with the "Tap the Check button." line, so it never appears while pouring.
-  if (!tutorial) { checkBtn.style.display = 'block'; checkBtn.disabled = false; }
+  // solo & pair rounds: the glass becomes draggable-to-the-tray as soon as they pour.
+  // tutorial: dragging stays locked until the glass is full — see the cap block below.
+  if (!tutorial) enableGlassDrag();
   hideHand();                           // pour clicked — remove the hand nudge
+  hideGlassGhost();                     // fill changed — drop any stale drag cue
   if (pairMode) armPourNudge();         // reset the idle-nudge timer on each pour
 
   pourBtn.classList.add('pressed');
@@ -2201,8 +2331,8 @@ function pour() {
   // the Check button is revealed by the "The glass is now full." line (see afterPour).
   if (tutorial && fillPct >= 100) {
     pourBtn.disabled = true;             // glass full — no more pouring
-    setTimeout(() => { if (phase === 'play') typeBanner('Tap the Check button.',
-      () => { glassEl.classList.remove('glow'); handToCheck(); }); }, 1100);   // cue: glow off + hand on Check
+    setTimeout(() => { if (phase === 'play') typeBanner('Drag the glass to the tray.',
+      () => { glassEl.classList.remove('glow'); enableGlassDrag(); hideHand(); showGlassGhost(); }); }, 1100);   // cue: ghost glass drifts to the glowing tray
   }
 }
 
@@ -2215,8 +2345,7 @@ function afterPour(r) {
     // the 50% (half-full) beat is handled in pour() before afterPour runs
     if (fillPct >= 100)      typeBanner('The glass is now full.', () => {
       if (cueVisible()) glassEl.classList.add('glow');
-      checkBtn.style.display = 'block';   // reveal Check exactly as the dragon says the glass is full
-      checkBtn.disabled = false;
+      enableGlassDrag();                  // glass becomes draggable exactly as the dragon says it's full
     });  // full → no re-enable
     else if (fillPct >= 75)  typeBanner('Tap again!', null, enablePour);
     else                     typeBanner('Keep pouring!', null, enablePour);
@@ -2224,12 +2353,14 @@ function afterPour(r) {
   }
   if (pairMode) return;   // two-client mode: no narration (dragon is gone); just pour freely
   // ── normal single-client rounds ──
+  // reaching the target → cue the drop: ghost glass drifts to the glowing tray (no hand)
+  const trayCue = () => { hideHand(); showGlassGhost(); };
   if (r.target === 'full') {
-    if (fillPct >= FULL_MIN)            typeBanner('Tap on the Check button.');
+    if (fillPct >= FULL_MIN)            typeBanner('Drag the glass to the tray.', trayCue);
     else if (fillPct >= 48 && fillPct <= 52) typeBanner('The glass is now half full.');
     else                                typeBanner('Tap again to pour more juice.');
   } else {
-    if (fillPct >= 50) typeBanner('The glass is now half full. Tap on the Check button.');
+    if (fillPct >= 50) typeBanner('The glass is now half full. Drag the glass to the tray.', trayCue);
     else               typeBanner('Tap again to pour more juice.');
   }
 }
@@ -2323,44 +2454,43 @@ function setJuice(pct) {
   const top = 340, bot = 1735;         // liquid surface range inside the glass SVG
   if (fillRect) fillRect.setAttribute('y', (bot - frac * (bot - top)).toFixed(1));
   // completely full → show the polished full-glass art in place of the drawn fill
-  if (glassEl) glassEl.classList.toggle('full', pct >= 100);
+  if (glassEl) glassEl.classList.toggle('glassIsFull', pct >= 100);
 }
 
 // ── on a correct answer: clone the filled glass into a draggable set on the tray ──
 let servedSet = null;
 
-function serveToTray() {
+function serveToTray(startLeft, startTop) {
   glassEl.classList.remove('glow');   // glass is leaving for the tray — stop the highlight (and don't clone it)
   const set = document.createElement('div');
   set.className = 'servedSet';
 
   servedN++;
   const lvl = pairMode ? servedLevel : ROUNDS[level].target;   // 'full' | 'half'
-  if (lvl === 'full') {
-    // full order → use the dedicated finished full-glass art (matches the glass footprint:
-    // same 0.67 aspect as the machine glass, so straw/lemon overlays still line up)
-    const img = document.createElement('img');
-    img.className = 'glassImg fullGlassArt';
-    img.src = 'new assets/full glass.svg';
-    set.appendChild(img);
-  } else {
-    // half order → clone the machine glass so it keeps the exact half fill level
-    const clone = glassEl.cloneNode(true);
-    clone.removeAttribute('id');
-    clone.classList.add('glassImg');
-    const guide = clone.querySelector('line'); if (guide) guide.remove();   // no half-line on the served glass
-    // give the clone's clip a unique id so it freezes at the current fill level
-    const cp = clone.querySelector('clipPath');
-    if (cp) {
-      const nid = 'fillClipServed' + servedN;
-      cp.id = nid;
-      clone.querySelectorAll('[clip-path]').forEach(g => g.setAttribute('clip-path', 'url(#' + nid + ')'));
-      const r = clone.querySelector('rect'); if (r) r.removeAttribute('id');
-    }
-    set.appendChild(clone);
+  // Always CLONE the machine glass — never load an external image. The clone carries the
+  // inlined full-glass art with it, so a full order shows the polished art and a half order
+  // keeps its exact fill level. Nothing can 404 and nothing has to be fetched, so the served
+  // glass is always drawn instantly.
+  const clone = glassEl.cloneNode(true);
+  clone.removeAttribute('id');
+  clone.classList.add('glassImg');
+  clone.classList.remove('grabbable', 'dragging', 'glow', 'wrong', 'gone', 'appearIn');
+  clone.style.transform = ''; clone.style.transition = '';
+  const guide = clone.querySelector('line'); if (guide) guide.remove();   // no half-line on the served glass
+  // give the clone's clip a unique id so it freezes at the current fill level
+  const cp = clone.querySelector('clipPath');
+  if (cp) {
+    const nid = 'fillClipServed' + servedN;
+    cp.id = nid;
+    clone.querySelectorAll('[clip-path]').forEach(g => g.setAttribute('clip-path', 'url(#' + nid + ')'));
+    const r = clone.querySelector('rect'); if (r) r.removeAttribute('id');
   }
-  set.style.left = '20.24%';   // start over the machine glass
-  set.style.top  = '79.4%';
+  // a full order always shows the polished art, even if the drop happened a hair under 100%
+  clone.classList.toggle('glassIsFull', lvl === 'full');
+  set.appendChild(clone);
+  // start over the machine glass by default; when dragged, start where it was dropped
+  set.style.left = startLeft || '20.24%';
+  set.style.top  = startTop  || '79.4%';
   gcEl.appendChild(set);
   servedSet = set;
   popSound();                  // glass pops onto the tray
@@ -2371,6 +2501,13 @@ function serveToTray() {
   if (fillRect) fillRect.style.transition = 'none';
   setJuice(0);
   if (fillRect) { void fillRect.getBoundingClientRect(); requestAnimationFrame(() => { fillRect.style.transition = ''; }); }
+  // the machine slot is now empty (the glass is on the tray) → hide it; a fresh glass
+  // re-appears in the slot when the reward coins vanish (see showMachineGlass in rewardCoins)
+  hideMachineGlass();
+  // …and with no glass under the spout there is nothing to pour into: lock POUR until the
+  // drink has been served and a fresh glass drops in (the next round re-enables it)
+  pourBtn.disabled = true;
+  cancelPourNudge();                 // don't nudge a button the player can't use
 
   // fly it onto the tray on the next frame so the transition runs
   requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -2429,14 +2566,14 @@ function flyToGlass(imgSrc, fromEl, done) {
 //   2nd ingredient (the other box)  → "complete <glass>" → ready to serve
 const COMPOSITES = {
   full: {
-    straw:    'new assets/full glass with  strow.svg',
-    lemon:    'new assets/full glass with lemon.svg',
-    complete: 'new assets/complete full glass.svg'
+    straw:    'new assets/full glass with  strow.webp',
+    lemon:    'new assets/full glass with lemon.webp',
+    complete: 'new assets/complete full glass.webp'
   },
   half: {
-    straw:    'new assets/main bg/half glass with strow ..svg',
-    lemon:    'new assets/main bg/half glass with lemon.svg',
-    complete: 'new assets/main bg/complete the half glass.svg'
+    straw:    'new assets/main bg/half glass with strow ..webp',
+    lemon:    'new assets/main bg/half glass with lemon.webp',
+    complete: 'new assets/main bg/complete the half glass.webp'
   }
 };
 // Each composite SVG has different padding around the glass (the straw pokes up,
@@ -2561,6 +2698,150 @@ function clearServed() {
 
 // ── drag the finished drink onto the customer to serve them ──
 let dragActive = false, dragStartX = 0, dragStartY = 0;
+
+// ── drag the FILLED machine glass onto the tray (replaces the old Check button) ──
+// Dropping it on the tray validates the fill: right order → it settles onto the tray and
+// the straw/lemon step begins; wrong order → it glides back with a "try again" shake.
+let glassDraggable = false, glassDragActive = false, glassDragSX = 0, glassDragSY = 0;
+
+// hide the pour glass while a drink is out being served; re-show it (a fresh glass drops
+// into the slot) exactly when the reward coins vanish — see rewardCoins.
+function hideMachineGlass() { hideGlassGhost(); glassEl.classList.remove('appearIn'); glassEl.classList.add('gone'); }
+function showMachineGlass() {
+  glassEl.classList.remove('gone', 'appearIn');
+  void glassEl.offsetWidth;                 // restart the pop-in animation
+  glassEl.classList.add('appearIn');
+  setTimeout(() => glassEl.classList.remove('appearIn'), 520);
+}
+
+// ── "drag the glass to the tray" cue ──────────────────────────
+// A faint clone of the filled glass drifts from the machine to the tray on a loop, and the
+// tray glows as the drop target. This replaces the hand nudge for this step.
+let glassGhostEl = null;
+function showGlassGhost() {
+  hideGlassGhost();
+  if (!glassEl || glassEl.classList.contains('gone')) return;
+  const trayEl = document.getElementById('tray');
+  if (!trayEl) return;
+  const ghost = glassEl.cloneNode(true);         // same glass, same fill level
+  ghost.removeAttribute('id');
+  ghost.classList.remove('grabbable', 'dragging', 'glow', 'wrong', 'appearIn');
+  // strip the clip-path id collision: give this clone its own so its fill renders
+  const cp = ghost.querySelector('clipPath');
+  if (cp) {
+    const nid = 'fillClipGhost' + (++servedN);
+    cp.id = nid;
+    ghost.querySelectorAll('[clip-path]').forEach(g => g.setAttribute('clip-path', 'url(#' + nid + ')'));
+    const r = ghost.querySelector('rect'); if (r) r.removeAttribute('id');
+  }
+  // measure the real machine→tray journey so the ghost lands on the tray at any screen size
+  const gr = glassEl.getBoundingClientRect();
+  const tr = trayEl.getBoundingClientRect();
+  const dx = (tr.left + tr.width / 2) - (gr.left + gr.width / 2);
+  const dy = (tr.top + tr.height * 0.42) - (gr.top + gr.height / 2);
+  ghost.style.setProperty('--ggx', (dx / gr.width  * 100).toFixed(1) + '%');
+  ghost.style.setProperty('--ggy', (dy / gr.height * 100).toFixed(1) + '%');
+  ghost.classList.add('glassGhost');
+  gcEl.appendChild(ghost);
+  glassGhostEl = ghost;
+  trayEl.classList.add('glow');                  // the tray glows as the drop target
+}
+function hideGlassGhost() {
+  if (glassGhostEl) { glassGhostEl.remove(); glassGhostEl = null; }
+  const trayEl = document.getElementById('tray');
+  if (trayEl) trayEl.classList.remove('glow');
+}
+
+function enableGlassDrag()  { glassDraggable = true;  glassEl.classList.add('grabbable'); }
+function disableGlassDrag() {
+  glassDraggable = false; glassDragActive = false;
+  glassEl.classList.remove('grabbable', 'dragging');
+  glassEl.style.transition = ''; glassEl.style.transform = '';
+  hideGlassGhost();                   // no drag → no ghost cue / tray glow
+}
+// glide the machine glass back to its home spot, then run `then` (used by the wrong-drop shake)
+function snapGlassHome(then) {
+  glassEl.style.transition = 'transform 0.3s ease';
+  glassEl.style.transform  = 'translate(0,0)';
+  setTimeout(() => {
+    glassEl.style.transition = ''; glassEl.style.transform = '';
+    glassEl.classList.remove('dragging');   // back home → drop it back to its normal layer
+    if (then) then();
+  }, 300);
+}
+function onGlassDown(e) {
+  if (!glassDraggable || !hasPoured || phase !== 'play') return;
+  e.preventDefault();
+  glassDragActive = true;
+  glassEl.classList.add('dragging');    // lift above the tray/boxes for the whole drag
+  hideHand();
+  hideGlassGhost();                     // player grabbed it — drop the ghost cue + tray glow
+  cancelPourNudge();
+  clearVoiceQueue();
+  if (bannerEl) bannerEl.classList.remove('show');
+  glassEl.classList.remove('glow');
+  glassEl.style.transition = 'none';
+  glassDragSX = e.clientX; glassDragSY = e.clientY;
+  try { glassEl.setPointerCapture(e.pointerId); } catch (err) {}
+  glassEl.addEventListener('pointermove', onGlassMove);
+  glassEl.addEventListener('pointerup', onGlassUp);
+}
+function onGlassMove(e) {
+  if (!glassDragActive) return;
+  glassEl.style.transform = `translate(${e.clientX - glassDragSX}px, ${e.clientY - glassDragSY}px)`;
+}
+function onGlassUp(e) {
+  if (!glassDragActive) return;
+  glassDragActive = false;
+  glassEl.removeEventListener('pointermove', onGlassMove);
+  glassEl.removeEventListener('pointerup', onGlassUp);
+
+  const dx = e.clientX - glassDragSX, dy = e.clientY - glassDragSY;
+  const gr = gcEl.getBoundingClientRect();
+  const trayEl = document.getElementById('tray');
+  const tr = trayEl.getBoundingClientRect();
+  const g  = glassEl.getBoundingClientRect();
+  const gx = g.left + g.width / 2, gy = g.top + g.height / 2;    // test the GLASS centre, not the cursor
+  const overTray = gx >= tr.left && gx <= tr.right && gy >= tr.top && gy <= tr.bottom;
+
+  if (!overTray) { snapGlassHome(); return; }   // released off the tray → just glide back, no penalty
+
+  // validate the fill against the current order
+  const active = pairMode ? activeCustomer() : null;
+  const want = pairMode ? (active ? active.target : null) : ROUNDS[level].target;
+  const lvl  = drinkLevel();                     // 'full' | 'half' | null (ambiguous)
+  const correct = !!lvl && lvl === want;
+
+  if (correct) {
+    // right order → the glass settles onto the tray from where it was dropped
+    phase = 'done';
+    servedLevel = lvl;                    // remember the fill level BEFORE the machine glass empties
+    wrongCheckCount = 0;
+    try { bonusSound.currentTime = 0; bonusSound.play().catch(() => {}); } catch (err) {}
+    disableGlassDrag();                   // clears the drag transform → the cloned glass is clean & centred
+    glassEl.classList.remove('glow', 'wrong');
+    // spawn the served glass where it was dropped, then glide it to the tray resting spot.
+    // serveToTray CLONES the still-filled machine glass (half orders) before emptying it, so
+    // the served drink keeps its juice — the glass must NOT be emptied before this call.
+    const startLeft = (20.24 + dx / gr.width  * 100).toFixed(2) + '%';
+    const startTop  = (79.4  + dy / gr.height * 100).toFixed(2) + '%';
+    serveToTray(startLeft, startTop);     // (serveToTray resets the machine glass to empty afterwards)
+    fillPct = 0; hasPoured = false;
+    if (servedSet) requestAnimationFrame(() => spawnRewardStars(servedSet));
+  } else {
+    // wrong order → glide back to the machine, shake, then reset for another pour
+    phase = 'done';
+    playWrongSound();
+    snapGlassHome(() => { glassEl.classList.remove('wrong'); void glassEl.offsetWidth; glassEl.classList.add('wrong'); });
+    wrongCheckCount++;
+    if (wrongCheckCount >= 2) {
+      const bubbleEl = (pairMode && active) ? document.getElementById(LANES[active.lane].bubbleId) : thoughtEl;
+      triggerWrongHint(want, bubbleEl);
+    }
+    setTimeout(tryAgain, pairMode ? 1500 : 2200);
+  }
+}
+glassEl.addEventListener('pointerdown', onGlassDown);
 
 function enableServeDrag() {
   if (!servedSet) return;
@@ -2774,8 +3055,7 @@ function tryAgain() {
   fillPct = 0; hasPoured = false; phase = 'play';
   glassEl.classList.remove('wrong');
   setJuice(0);
-  checkBtn.style.display = 'none';   // hidden again until they pour
-  checkBtn.disabled = true;
+  disableGlassDrag();                // empty glass → not draggable until they pour again
   // while the wrong-hint is playing, the hint owns POUR + the hand: keep pouring
   // LOCKED so the dragon can finish its line uninterrupted, and don't cue a hand.
   // The hint re-enables POUR and shows the hand once the dragon has fully exited.
@@ -2924,8 +3204,8 @@ function addCustomer(data) {
   const bg = document.getElementById(L.bgId);
   const inner = document.getElementById(L.innerId);
   const bubble = document.getElementById(L.bubbleId);
-  if (bg) bg.src = (data.target === 'half') ? 'new assets/dailoge box for half glass.svg'
-                                            : 'new assets/dailoge box.svg';
+  if (bg) bg.src = (data.target === 'half') ? 'new assets/dailoge box for half glass.webp'
+                                            : 'new assets/dailoge box.webp';
   if (inner) inner.textContent = '';
   if (bubble) { bubble.style.transition = 'none'; placeBubble(bubble, pos, data.skin); bubble.classList.remove('show'); }
   el.classList.add('arriving');        // walk in from the right
@@ -2952,8 +3232,8 @@ function startPair() {
   busyLanes = [];
   clearServed();
   setJuice(0); fillPct = 0; hasPoured = false;
-  glassEl.classList.remove('glow', 'wrong');
-  checkBtn.style.display = 'none'; checkBtn.disabled = true;
+  glassEl.classList.remove('glow', 'wrong', 'gone', 'appearIn');   // glass visible at cycle start
+  disableGlassDrag();                // empty glass → not draggable until poured
   pourBtn.disabled = true;
   hideHand();
   if (bannerEl) bannerEl.classList.remove('show');
@@ -3096,7 +3376,10 @@ function rewardCoins(fromEl) {
   pile._hold = setTimeout(() => {                   // hold ~0.9 seconds…
     pile.classList.remove('landIn');
     pile.classList.add('fadeOut');                  // …then smooth magical fade-out (no sfx)
-    pile._gone = setTimeout(() => { pile.style.display = 'none'; pile.classList.remove('fadeOut'); }, 720);
+    pile._gone = setTimeout(() => {
+      pile.style.display = 'none'; pile.classList.remove('fadeOut');
+      showMachineGlass();                           // coins gone → a fresh glass appears in the machine
+    }, 720);
   }, 900);
 }
 
@@ -3194,6 +3477,7 @@ function serveCustomer(c) {
 // ── end-screen confetti (carnival colours, rains over the celebration video) ──
 const CONFETTI_COLORS = ['#FF7ED8', '#CE9EFF', '#FFD84D', '#7FE0FF', '#FF9E5A', '#FFFFFF', '#8BE78B'];
 let confettiTimer = null;
+let endWatchdog = null;      // third escape path out of the end screen (see endGame)
 function makeConfettiPiece() {
   const box = document.getElementById('confetti');
   if (!box) return;
@@ -3242,7 +3526,19 @@ function endGame() {
   const v = document.getElementById('endVideo');
   if (v) {
     v.currentTime = 0;
-    v.onended = restartGame;
+    if (endWatchdog) { clearTimeout(endWatchdog); endWatchdog = null; }
+    const leave = () => {                            // whichever path fires first wins
+      if (endWatchdog) { clearTimeout(endWatchdog); endWatchdog = null; }
+      restartGame();
+    };
+    const armWatchdog = () => {                      // re-armed once the duration is known
+      if (endWatchdog) clearTimeout(endWatchdog);
+      const dur = (isFinite(v.duration) && v.duration > 0) ? v.duration : 5;
+      endWatchdog = setTimeout(leave, dur * 1000 + 3000);
+    };
+    v.onloadedmetadata = armWatchdog;
+    armWatchdog();                                   // covers metadata never arriving
+    v.onended = leave;
     v.onerror = () => setTimeout(restartGame, 1500); // video missing/broken → still reach the title
     const p = v.play();
     if (p) p.catch(() => {                           // autoplay-with-sound blocked → retry muted
@@ -3256,6 +3552,7 @@ function endGame() {
 
 // video finished (or Play Again) → full restart from the title screen
 function restartGame() {
+  if (endWatchdog) { clearTimeout(endWatchdog); endWatchdog = null; }   // leaving the end screen
   const end = document.getElementById('gameEnd'); if (end) end.classList.remove('show');
   stopConfetti();
   const v = document.getElementById('endVideo');
@@ -3274,8 +3571,9 @@ function restartGame() {
   level = 0; singleDone = 0; dragonGone = false; titleDone = false;
   if (dragonEl) { dragonEl.classList.remove('exitRight', 'intro'); dragonEl.style.display = ''; dragonEl.style.visibility = ''; }
   const t = document.getElementById('title'); if (t) { t.style.display = ''; t.classList.remove('leaving'); }
-  const pb = document.getElementById('playBtn');      // thumbnail after a finished game → "Play Again" button
-  if (pb) { pb.src = 'new assets/play again.webp'; pb.alt = 'Play Again'; pb.classList.add('again'); }
+  // no "Play Again" button — the title always shows the standard Play button
+  const pb = document.getElementById('playBtn');
+  if (pb) { pb.src = 'assets map/start-button.webp'; pb.alt = 'Play'; pb.classList.remove('again'); }
   stopGameMusic(); playTitleMusic();   // back on the thumbnail → gameplay music off, title music on
   initRound();
 }
@@ -3426,8 +3724,8 @@ function devSetupScene(n) {
   clientEl.style.opacity = '1';
   const thoughtBg = document.getElementById('thoughtBg');
   if (thoughtBg) thoughtBg.src = (r.target === 'half')
-    ? 'new assets/dailoge box for half glass.svg'
-    : 'new assets/dailoge box.svg';
+    ? 'new assets/dailoge box for half glass.webp'
+    : 'new assets/dailoge box.webp';
   thoughtEl.classList.add('show');
 }
 
@@ -3454,9 +3752,10 @@ function devToCheck(n) {
   fillPct = devTargetPct(r); hasPoured = true;
   setJuice(fillPct);
   pourBtn.disabled = (fillPct >= 100);
-  checkBtn.style.display = 'block';
-  checkBtn.disabled = false;
-  devHand('61%', '90%');
+  phase = 'play';
+  enableGlassDrag();               // filled glass → ready to drag onto the tray
+  hideHand();
+  showGlassGhost();                // ghost glass drifts to the glowing tray
 }
 
 // ③ filled glass served on the tray, straw step available
@@ -3544,8 +3843,8 @@ function devPairJump(target, step, lastVisit) {
   el.style.left = pos.left;
   el.src = data.img;
   const bg = document.getElementById(L.bgId);
-  if (bg) bg.src = (data.target === 'half') ? 'new assets/dailoge box for half glass.svg'
-                                            : 'new assets/dailoge box.svg';
+  if (bg) bg.src = (data.target === 'half') ? 'new assets/dailoge box for half glass.webp'
+                                            : 'new assets/dailoge box.webp';
   const inner = document.getElementById(L.innerId); if (inner) inner.textContent = '';
   const bubble = document.getElementById(L.bubbleId);
   if (bubble) { bubble.style.transition = 'none'; placeBubble(bubble, pos, data.skin); }
@@ -3663,6 +3962,138 @@ buildDevMenu();
 // ════ end DEV screen switcher ════
 
 // ── boot ──────────────────────────────────────────────────────
+// ==== boot preloader ==========================================
+// Fetches EVERY asset before the Play button appears, with byte-accurate progress.
+//  * weighted by real on-disk sizes (ASSET_BYTES), refined by each Content-Length
+//  * streaming reader -> the bar moves with real bytes, and only ever forwards
+//  * smallest-first so cover art / customers / props land in the first seconds and are
+//    never starved behind the big music track or the end video
+//  * media elements are handed blob: URLs, so "loaded" really means local
+//  * nothing can block the player: any failure, stall or abort - or file://, where fetch
+//    is blocked outright - counts as done and the element keeps its original src
+const PRELOAD_CONCURRENCY = 5;
+// STALL timeout, not a total-transfer deadline: a big file on a slow link can legitimately
+// take a while, and a request can also sit queued behind others. We only abort when a
+// transfer stops making progress, so healthy slow downloads are never killed.
+const PRELOAD_STALL_MS    = 12000;
+const PRELOAD_HARD_CAP_MS = 20000;   // absolute reveal deadline - the player always gets in
+
+function bootPreload() {
+  const wrap = document.getElementById('loadWrap');
+  const fill = document.getElementById('loadFill');
+  const pctEl = document.getElementById('loadPct');
+  const btn  = document.getElementById('playBtn');
+
+  const jobs = [];
+  PRELOAD_ASSETS.forEach(src => jobs.push({ src: src, kind: 'img' }));
+  AUDIO_REG.forEach(a => jobs.push({ src: a.src, kind: 'audio', el: a.el }));
+  const vid = document.getElementById('endVideo');
+  const vsrcEl = vid ? vid.querySelector('source') : null;
+  if (vsrcEl) jobs.push({ src: vsrcEl.getAttribute('src'), kind: 'video', el: vid, srcEl: vsrcEl });
+
+  jobs.forEach(j => { j.weight = ASSET_BYTES[j.src] || 40000; j.got = 0; });
+  jobs.sort((a, b) => a.weight - b.weight);            // smallest first
+  let total = jobs.reduce((s, j) => s + j.weight, 0) || 1;
+
+  let shown = 0, finished = false;
+  function paint() {
+    total = jobs.reduce((s, j) => s + j.weight, 0) || 1;
+    const got = jobs.reduce((s, j) => s + Math.min(j.got, j.weight), 0);
+    let p = Math.round(got / total * 100);
+    if (p < shown) p = shown;                           // monotonic
+    if (p > 100) p = 100;
+    shown = p;
+    if (fill)  fill.style.width = p + '%';
+    if (pctEl) pctEl.textContent = p + '%';
+    if (wrap)  wrap.setAttribute('aria-valuenow', String(p));
+  }
+  function reveal() {
+    if (finished) return;
+    finished = true;
+    shown = 100;
+    if (fill)  fill.style.width = '100%';
+    if (pctEl) pctEl.textContent = '100%';
+    if (wrap)  wrap.setAttribute('aria-valuenow', '100');
+    assetsReady = true;                                 // unlocks leaveTitle()
+    setTimeout(() => {
+      if (wrap) wrap.classList.add('done');
+      if (btn)  btn.classList.add('ready');             // pop-in
+      setTimeout(() => { if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap); }, 500);
+    }, 220);
+  }
+
+  // hand a fetched blob to its media element, with a one-time revert to the file URL
+  function attachBlob(job, blob) {
+    const url = URL.createObjectURL(blob);
+    const el = job.el, orig = job.src;
+    const onErr = () => {
+      if (job.kind === 'video') {
+        const wasPlaying = !el.paused;
+        job.srcEl.setAttribute('src', orig);
+        try { el.load(); if (wasPlaying) el.play().catch(() => {}); } catch (e) {}
+      } else {
+        el.src = orig;
+      }
+    };
+    el.addEventListener('error', onErr, { once: true });
+    if (job.kind === 'video') { job.srcEl.setAttribute('src', url); try { el.load(); } catch (e) {} }
+    else { el.src = url; }
+  }
+
+  function fetchOne(job) {
+    if (typeof fetch !== 'function') { job.got = job.weight; paint(); return Promise.resolve(); }
+    const ctl = ('AbortController' in window) ? new AbortController() : null;
+    let idle = null;
+    const bump = () => {                                 // reset the stall clock on progress
+      if (idle) clearTimeout(idle);
+      idle = setTimeout(() => { try { if (ctl) ctl.abort(); } catch (e) {} }, PRELOAD_STALL_MS);
+    };
+    bump();
+    return fetch(job.src, ctl ? { signal: ctl.signal } : undefined).then(res => {
+      bump();
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const len = parseInt(res.headers.get('content-length') || '0', 10);
+      if (len > 0) job.weight = Math.max(len, 1);        // refine the weight
+      if (res.body && res.body.getReader) {
+        const reader = res.body.getReader(), chunks = [];
+        let got = 0;
+        const pump = () => reader.read().then(r => {
+          if (r.done) return new Blob(chunks, { type: res.headers.get('content-type') || '' });
+          bump();                                        // bytes arrived -> not stalled
+          chunks.push(r.value); got += r.value.length;
+          if (got > job.weight) job.weight = got;
+          job.got = got; paint();
+          return pump();
+        });
+        return pump();
+      }
+      return res.blob();
+    }).then(blob => {
+      job.got = job.weight;
+      if (job.el) attachBlob(job, blob);
+      else if (job.kind === 'img') {
+        return new Promise(r => { const im = new Image(); im.onload = im.onerror = r; im.src = job.src; });
+      }
+    }).catch(() => {
+      job.got = job.weight;                              // never block on a failure
+    }).then(() => {
+      if (idle) clearTimeout(idle);
+      paint();
+    });
+  }
+
+  paint();
+  let idx = 0;
+  const worker = () => (idx >= jobs.length) ? Promise.resolve() : fetchOne(jobs[idx++]).then(worker);
+  const lanes = [];
+  for (let i = 0; i < Math.min(PRELOAD_CONCURRENCY, jobs.length); i++) lanes.push(worker());
+  Promise.all(lanes).then(reveal, reveal);
+  setTimeout(reveal, PRELOAD_HARD_CAP_MS);               // absolute safety net
+  // file:// blocks fetch for every asset - reveal promptly instead of grinding to the cap
+  if (location.protocol === 'file:') setTimeout(reveal, 1200);
+}
+
+bootPreload();
 initRound();
 </script>
 <!-- debug overlay loads ONLY with ?debug=1 — purely additive, no effect on the live game -->
