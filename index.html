@@ -1803,6 +1803,16 @@ function pumpDialogue() {
   }
 }
 
+// Interaction-driven "stop the narration": used when the player acts and the instruction they
+// were being given is now moot. During the TUTORIAL this does NOTHING -- the walkthrough
+// depends on the player hearing every line in full, so touching the glass mid-line must not
+// cut it off or drop the lines queued behind it.
+// Round resets still call clearVoiceQueue() directly; those SHOULD drop stale lines.
+function stopNarrationOnAction() {
+  if (tutorial) return;
+  clearVoiceQueue();
+  if (bannerEl) bannerEl.classList.remove('show');
+}
 // drop any pending/playing narration (used on round reset)
 function clearVoiceQueue() {
   voiceQueue = [];
@@ -2497,7 +2507,8 @@ function pour() {
   if (tutorial && fillPct === 50) {
     pourBtn.disabled = true;             // lock the POUR button immediately (no over-pouring)
     glassEl.classList.add('glow');       // glow the glass to draw attention
-    clearVoiceQueue();                   // drop any pending line so the beat shows right now
+    // (this used to clearVoiceQueue() so the beat could jump the queue, which skipped
+    //  whatever the dragon was still saying. It now simply queues in order.)
     hideHand();
     typeBanner('The glass is now half full.', null, () => {
       glassEl.classList.remove('glow');  // dialogue finished →
@@ -2959,8 +2970,7 @@ function onGlassDown(e) {
   hideHand();
   hideGlassGhost();                     // player grabbed it — drop the ghost cue + tray glow
   cancelPourNudge();
-  clearVoiceQueue();
-  if (bannerEl) bannerEl.classList.remove('show');
+  stopNarrationOnAction();              // tutorial: the line plays on, never cut off
   glassEl.classList.remove('glow');
   glassEl.style.transition = 'none';
   glassDragSX = e.clientX; glassDragSY = e.clientY;
@@ -3094,8 +3104,7 @@ function onServeDown(e) {
   dragActive = true;
   hideHand();                       // player grabbed the glass
   cancelDragIdleNudge();            // interaction → stop the ghost + idle timer
-  clearVoiceQueue();                // stop the "Drag…" narration
-  if (bannerEl) bannerEl.classList.remove('show');   // hide the dialogue box once dragging starts
+  stopNarrationOnAction();          // drop the drag line -- but never during the tutorial
   servedSet.classList.remove('hintBob');
   servedSet.style.transition = 'none';
   dragStartX = e.clientX; dragStartY = e.clientY;
@@ -3143,8 +3152,7 @@ function onServeUp(e) {
 
 function deliverToCustomer() {
   hideHand();
-  clearVoiceQueue();                                  // stop the "Drag…" narration
-  if (bannerEl) bannerEl.classList.remove('show');    // dialogue box disappears immediately on drop
+  stopNarrationOnAction();                            // not during the tutorial -- lines finish
   hideThought();                                      // remove the customer's order (glass) bubble
   phase = 'leaving';
   const isGhost = (ROUNDS[level].skin === 'ghost');
@@ -3188,8 +3196,7 @@ function check() {
   phase = 'done';
   checkBtn.disabled = true;
   hideHand();                       // check tapped — remove the hand nudge
-  clearVoiceQueue();                // check tapped — skip the "Tap the Check button." narration
-  if (bannerEl) bannerEl.classList.remove('show');
+  stopNarrationOnAction();          // drop the now-moot instruction (never in the tutorial)
 
   const r = ROUNDS[level];
   const correct = r.target === 'half'
