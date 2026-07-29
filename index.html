@@ -209,10 +209,12 @@ body {
 /* ── dragon's speech bubble (CSS-drawn so it sizes cleanly to any text) ── */
 #dragonBubble {
   position: absolute;
-  left: 86.83%;                /* anchored by centre so the bubble stays put as text changes */
+  /* left/top are a fallback only — positionDragonBubble() drives them every frame so the
+     bubble stays attached to the dragon. NO transition on left/top: the per-frame updates
+     would rubber-band against it. */
+  left: 86.83%;
   top: 21.67%;
   transform: translateX(-50%);
-  transition: left 0.6s ease, top 0.6s ease;
   width: max-content;          /* hug the text … */
   max-width: 19%;              /* … up to a sensible cap, then wrap onto more lines */
   background: #fbe9cf;         /* peach fill */
@@ -691,7 +693,16 @@ body {
   filter: brightness(0.82) drop-shadow(0 0 6px rgba(255,215,0,0.8));
   animation: none;
 }
-#pourBtn:disabled { cursor: default; filter: grayscale(0.4) brightness(0.85); }
+/* Disabled POUR (glass already full, or locked while the dragon speaks). The ready-glow
+   animation above only runs on :not(:disabled), so it stops here; this makes the button
+   clearly read as "not tappable" — the old grayscale(0.4) was too subtle to notice. */
+#pourBtn:disabled {
+  cursor: default;
+  pointer-events: none;                /* no hover/active feedback either */
+  filter: grayscale(0.85) brightness(0.62) contrast(0.9);
+  opacity: 0.55;
+  transform: scale(0.96);
+}
 /* pointer-driven game buttons: no browser focus ring — shift+click / keyboard-style
    activation otherwise draws a rectangle around the button's (invisible) box */
 #pourBtn:focus, #pourBtn:focus-visible,
@@ -1308,6 +1319,7 @@ const ASSET_BYTES = {
   'audio/Let us serve him.ogg': 17734,
   'audio/Look! Our first customer.ogg': 27871,
   'audio/Now, it is your turn!.ogg': 24182,
+  'audio/ready set serve.ogg': 28677,
   'audio/Tap the Pour button 2 times.ogg': 31513,
   'audio/Tap the Pour button 4 times.ogg': 31650,
   'audio/Tap the button to pour juice.ogg': 26360,
@@ -1383,6 +1395,11 @@ let dragonGone = false;   // true once the host dragon has left at the end of th
 
 // ── DOM ───────────────────────────────────────────────────────
 const pourBtn   = document.getElementById('pourBtn');
+// THE rule for POUR: tappable only while the glass still has room. Several dialogue
+// callbacks re-enable POUR asynchronously (a line that finishes narrating after a later
+// tap already filled the glass), so every re-enable goes through here instead of setting
+// `disabled = false` directly — a late callback can then never revive POUR on a full glass.
+function allowPour() { pourBtn.disabled = (fillPct >= 100); }
 const checkBtn  = document.getElementById('checkBtn');
 const bannerTxt = document.getElementById('dragonText');     // dragon's speech bubble text
 const bannerEl  = document.getElementById('dragonBubble');   // dragon's speech bubble
@@ -1468,38 +1485,52 @@ function showPourHand() {
   handEl.classList.remove('dragHint');
   handEl.style.display = 'block';
 }
-// In customer mode the POUR hand only appears after ~11s of inactivity (not immediately).
-// The tutorial keeps its own hand cues and never uses this.
+// ── inactivity nudge, armed at EVERY stage of pouring ─────────
+// After ~11s idle the player always gets a hint, whatever the fill level — and always the
+// RIGHT one for the state they are in:
+//   • order not met yet, room to pour   → tapping hand on POUR
+//   • order already met                → ghost glass drifting to the glowing tray
+//   • glass full / overpoured (POUR locked, order not met) → also the tray ghost, since
+//     pouring is impossible and serving it is the only move left
+// No fill level is left without a nudge, and POUR is never pointed at when pouring more
+// would be the wrong thing to do.
+// (The guided tutorial drives its own cues step by step, so it opts out.)
+const POUR_IDLE_MS = 11000;
 let idleNudgeTimer = null;
-let idleHandShown = false;   // the hand currently on screen came from THIS idle nudge
+let idleHandShown = false;   // the hint currently on screen came from THIS idle nudge
 function armPourNudge() {
   if (idleNudgeTimer) { clearTimeout(idleNudgeTimer); idleNudgeTimer = null; }
-  if (!pairMode) return;                 // tutorial / solo: no idle nudge
+  if (tutorial) return;                  // tutorial guides every step itself
   idleNudgeTimer = setTimeout(() => {
-    if (!(pairMode && phase === 'play')) return;
-    const active = activeCustomer();
-    const want = active ? active.target : 'full';
-    const goalReached = (want === 'half') ? (fillPct >= HALF_MIN) : (fillPct >= FULL_MIN);
-    // glass already matches the order → the next step is to drag it onto the tray
-    if (drinkLevel() === want && glassDraggable) {
-      hideHand();
-      showGlassGhost();                      // ghost glass drifts to the glowing tray (no hand)
-      idleHandShown = true;
-      return;
+    if (phase !== 'play') return;
+    // what does the current customer want? (solo rounds use the round's own target)
+    const active = pairMode ? activeCustomer() : null;
+    const want = pairMode ? (active ? active.target : null) : ROUNDS[level].target;
+    const matches = !!want && drinkLevel() === want;
+
+    // 1. the glass already matches the order → serve it, don't pour more
+    if (matches && glassDraggable) {
+      hideHand(); showGlassGhost(); idleHandShown = true; return;
     }
-    // otherwise (still short of the goal) → nudge POUR. Overpoured/ambiguous fills get
-    // no nudge: pointing at POUR would say "pour more", which is a wrong hint there.
-    if (!goalReached && !pourBtn.disabled) { showPourHand(); idleHandShown = true; }
-  }, 11000);
+    // 2. still short of the order and there is room → nudge POUR
+    if (!pourBtn.disabled && fillPct < 100) {
+      hideGlassGhost(); showPourHand(); idleHandShown = true; return;
+    }
+    // 3. nothing left to pour but the order isn't met (overpoured / ambiguous fill) →
+    //    the only move is to put it on the tray, so nudge that rather than nudging nothing
+    if (glassDraggable) {
+      hideHand(); showGlassGhost(); idleHandShown = true;
+    }
+  }, POUR_IDLE_MS);
 }
 function cancelPourNudge() {
   if (idleNudgeTimer) { clearTimeout(idleNudgeTimer); idleNudgeTimer = null; }
 }
-// ANY activity (mouse move, click, touch) dismisses an idle-nudge hand and restarts
-// the ~11s inactivity window, so the hand returns only after the player goes idle again.
+// ANY activity (mouse move, click, touch) dismisses an idle nudge and restarts the ~11s
+// inactivity window, so the hint returns only after the player goes idle again.
 function noteIdleActivity() {
-  if (idleHandShown) { hideHand(); idleHandShown = false; }
-  if (pairMode && phase === 'play') armPourNudge();
+  if (idleHandShown) { hideHand(); hideGlassGhost(); idleHandShown = false; }
+  if (phase === 'play' && !tutorial) armPourNudge();
 }
 document.addEventListener('pointerdown', noteIdleActivity, true);
 document.addEventListener('pointermove', noteIdleActivity, { capture: true, passive: true });
@@ -1521,22 +1552,25 @@ const coinsGoneSound = regAudio('sxf/coins disappers.ogg');
 const transitionSound = regAudio('sxf/transation.ogg');
 transitionSound.volume = 0.7;
 
-// ── title-screen music (plays on the thumbnail; turns off when Play is tapped) ──
-// No title track ships yet: the old 'sxf/star bg musics.mp3' reference 404'd on every
-// load while never playing. Drop a track in sxf/ and point TITLE_MUSIC_SRC at it.
-const TITLE_MUSIC_SRC = null;                  // e.g. 'sxf/title-music.ogg'
-const titleMusic = TITLE_MUSIC_SRC ? new Audio(TITLE_MUSIC_SRC) : null;
-if (titleMusic) { titleMusic.loop = true; titleMusic.volume = 0.5; titleMusic.preload = 'auto'; }
+// ── title-screen audio (plays on the thumbnail; stops when Play is tapped) ──
+// 'ready set serve.ogg' is a ~2.5s title sting, so it plays ONCE rather than looping.
+// Set TITLE_MUSIC_LOOP = true if you swap in a track built to loop seamlessly.
+const TITLE_MUSIC_SRC  = 'audio/ready set serve.ogg';
+const TITLE_MUSIC_LOOP = false;
+// routed through regAudio so the boot preloader streams it and hands it a blob: URL
+const titleMusic = TITLE_MUSIC_SRC ? regAudio(TITLE_MUSIC_SRC) : null;
+if (titleMusic) { titleMusic.loop = TITLE_MUSIC_LOOP; titleMusic.volume = 0.85; }
 function playTitleMusic() {
   if (!titleMusic || titleDone) return;                       // game started (Play tapped) — stay off
-  try { titleMusic.play().catch(() => {}); } catch (e) {}
+  try { titleMusic.currentTime = 0; titleMusic.play().catch(() => {}); } catch (e) {}
 }
 function stopTitleMusic() {
   if (!titleMusic) return;
   try { titleMusic.pause(); titleMusic.currentTime = 0; } catch (e) {}
 }
-// try to start on load; if the browser blocks autoplay, start on the first interaction
-playTitleMusic();
+// The sting fires when the title is actually ready — i.e. when the preloader reveals the
+// Play button (see reveal() in bootPreload), not at 0% while the bar is still filling.
+// If the browser blocks autoplay, the first interaction starts it instead.
 document.addEventListener('pointerdown', playTitleMusic, { once: true });
 
 // ── gameplay music (starts when Play is tapped; loops through the game) ──
@@ -1588,6 +1622,13 @@ let voiceQueue   = [];
 let voiceBusy    = false;
 let currentVoice = null;
 let voiceFallback = null;
+// ── dialogue pacing ──────────────────────────────────────────
+// A beat of silence is held between one line finishing and the next appearing, so lines
+// never run into each other and the player has time to read and take in each one.
+// The finished line stays on screen through the pause (it is not blanked), and the dragon
+// stops animating — so it reads as a breath between sentences, not a gap.
+const DIALOGUE_GAP_MS = 1700;
+let dialogueGap = null;
 // ── dragon typewriter ────────────────────────────────────────
 // Reveal the line one character at a time, with a blinking caret and a soft
 // click per keystroke. The not-yet-typed tail is kept in the layout (invisible)
@@ -1676,7 +1717,9 @@ const NO_BOX = {
 // for the slow typewriter to finish the whole sentence, plus a moment to read it
 function estimateDuration(text) {
   const len = text ? text.length : 0;
-  return Math.min(9500, Math.max(2400, len * TYPE_MS + 800));
+  // long enough for the typewriter to finish the whole sentence (len * TYPE_MS) PLUS a
+  // beat to actually read it before the line is retired
+  return Math.min(10500, Math.max(2800, len * TYPE_MS + 1200));
 }
 
 function enqueueDialogue(text, onDone, onEnd) {
@@ -1710,7 +1753,7 @@ function pumpDialogue() {
       hideHand();
       boxlessLine = true;
     } else {
-      if (bannerEl)  bannerEl.classList.add('show');
+      if (bannerEl) { bannerEl.classList.add('show'); startBubbleFollow(); }   // bubble tracks the dragon
       if (bannerTxt) {
         if (skipDialogue) { stopTyping(); bannerTxt.classList.remove('typing'); bannerTxt.textContent = item.text; }
         else              typeDragon(item.text, clipMs);   // typewriter reveal, paced to the narration
@@ -1731,8 +1774,13 @@ function pumpDialogue() {
     dragonTalk(false);                      // stopped talking — freeze the dragon
     boxlessLine = false;                    // box-less line over — cues need a visible box again
     if (item.onEnd) item.onEnd();           // this line's audio has fully finished
-    voiceBusy = false;
-    pumpDialogue();
+    // hold a beat before the next line. voiceBusy stays TRUE through the pause, so a line
+    // queued during it still waits its turn instead of jumping the gap.
+    dialogueGap = setTimeout(() => {
+      dialogueGap = null;
+      voiceBusy = false;
+      pumpDialogue();
+    }, skipDialogue ? 0 : DIALOGUE_GAP_MS);
   };
 
   if (clip) {                                 // (file/clip resolved at the top of this function)
@@ -1762,6 +1810,7 @@ function clearVoiceQueue() {
   boxlessLine = false;
   stopTyping();                      // abort any in-progress typewriter reveal
   if (voiceFallback) { clearTimeout(voiceFallback); voiceFallback = null; }
+  if (dialogueGap)   { clearTimeout(dialogueGap);   dialogueGap = null; }   // drop a pending pause
   if (currentVoice) {
     try { currentVoice.onended = null; currentVoice.pause(); currentVoice.currentTime = 0; } catch (e) {}
     currentVoice = null;
@@ -1772,7 +1821,69 @@ function clearVoiceQueue() {
 // ── dragon animation: the GIF only plays while the dragon is speaking ──
 // An animated webp can't be paused, so when idle we draw the CURRENT frame onto
 // a canvas placed over the dragon and hide the live image. We only DRAW to the
-// canvas (never read it), so this also works when the page runs from file://.
+// ── keep the speech bubble attached to the dragon ─────────────
+// The bubble used to be positioned independently of the dragon: each had its own hard-coded
+// left/top, paired by hand (#dragon.intro <-> #dragonBubble.introPos). Any time those fell
+// out of step — and during the dragon's transform ANIMATIONS (hintIn / exitRight), which the
+// bubble had no counterpart for — the bubble was left stranded with its tail pointing at
+// nothing. It now tracks the dragon's live on-screen position every frame instead, so it
+// follows left/right/forward/backward movement of every kind, including resizes.
+
+// The dragon is object-fit:contain inside an oversized box, so the element rect is NOT where
+// the art is. Work out the letterboxed art rect (same maths as freezeDragon uses).
+function dragonArtRect() {
+  const r = dragonEl.getBoundingClientRect();
+  const iw = dragonEl.naturalWidth, ih = dragonEl.naturalHeight;
+  if (!iw || !ih) return r;
+  const s = Math.min(r.width / iw, r.height / ih);
+  const dw = iw * s, dh = ih * s;
+  return { left: r.left + (r.width - dw) / 2, top: r.top + (r.height - dh) / 2, width: dw, height: dh };
+}
+let bubbleFollowRaf = null;
+function positionDragonBubble() {
+  if (!bannerEl || !dragonEl) return;
+  if (dragonEl.style.display === 'none' || dragonEl.style.visibility === 'hidden') return;
+  const gr = gcEl.getBoundingClientRect();
+  const a  = dragonArtRect();
+  if (!a.width || !gr.width) return;
+  const bw = bannerEl.offsetWidth, bh = bannerEl.offsetHeight;
+  if (!bw || !bh) return;
+  const pad = gr.width * 0.012;
+  // The tail is a CSS triangle hanging BELOW the box (border: 0.95cqw) at left:58%, so the
+  // bubble's true bottom edge is bh + tailH, and it points down-right of centre.
+  const tailH    = gr.width * 0.0095;
+  const tailFrac = 0.58;
+  const headX = (a.left + a.width * 0.42) - gr.left;   // where the head actually sits
+  // horizontally: offset so the TAIL TIP lands on the head (not the bubble's centre),
+  // then clamp so the bubble never runs off the board
+  const half = bw / 2;
+  let cx = headX - (tailFrac - 0.5) * bw;
+  cx = Math.max(half + pad, Math.min(gr.width - half - pad, cx));
+  // vertically: the whole bubble INCLUDING the tail sits just above the horn tips.
+  // HORN_TOP_FRAC is measured from the artwork — the topmost opaque row sits 2-8px into the
+  // 514px-tall image across all 25 animation frames, so the horns are essentially at the top
+  // of the art rect. Referencing the horn line (rather than the image box) lets the bubble sit
+  // low and close to him while still never overlapping the face.
+  const HORN_TOP_FRAC = 0.004;
+  const hornY = a.top + a.height * HORN_TOP_FRAC;
+  const clear = gr.height * 0.012;                 // small breathing gap above the horns
+  let ty = hornY - (bh + tailH + clear) - gr.top;
+  ty = Math.max(pad, ty);
+  bannerEl.style.left = (cx / gr.width  * 100).toFixed(2) + '%';
+  bannerEl.style.top  = (ty / gr.height * 100).toFixed(2) + '%';
+}
+// follow every frame while the bubble is up; the loop retires itself once it hides
+function startBubbleFollow() {
+  if (bubbleFollowRaf) return;
+  const step = () => {
+    if (!bannerEl || !bannerEl.classList.contains('show')) { bubbleFollowRaf = null; return; }
+    positionDragonBubble();
+    bubbleFollowRaf = requestAnimationFrame(step);
+  };
+  positionDragonBubble();                 // place it before the first paint, no visible jump
+  bubbleFollowRaf = requestAnimationFrame(step);
+}
+
 let dragonTalking = true, dragonFreezeCv = null;
 function freezeDragon() {
   if (!dragonEl || dragonGone || !dragonEl.naturalWidth) return;
@@ -1879,7 +1990,7 @@ function triggerWrongHint(target, bubbleEl) {
             dragonGone = wasGone;
             hintActive = false;
             // 5) only after the dragon has fully exited does the hand hint appear
-            if (phase === 'play') { pourBtn.disabled = false; showPourHand(); if (pairMode) armPourNudge(); }
+            if (phase === 'play') { allowPour(); showPourHand(); armPourNudge(); }
           }, 1000);
         }, 500);   // reading beat after the line is complete
       });
@@ -2003,7 +2114,19 @@ function spawnSplashDrops(fx) {
   }
 }
 
-// the pink juice-splash wipe: splat bursts to cover, then the waves drain off the bottom
+// ── the pink juice-splash wipe ────────────────────────────────
+// ONE timeline drives the whole effect, and the sound is fitted to it (never the reverse).
+// Phases: splat bursts out → waves glide in behind it → splat crossfades away → waves drain
+// off the bottom, revealing the new scene.
+const TRANS = {
+  BURST:    700,   // splat expands from nothing to swallowing the board
+  WAVE_IN:  300,   // waves glide into place BEHIND the opaque splat (overlaps the burst)
+  FADE:     340,   // splat crossfades out once the waves are home
+  DRAIN_AT: 1040,  // waves start falling away
+  DRAIN:    1040,  // how long they take to clear the board
+  STAGGER:   90,   // front wave trails the back one
+  CLEANUP:  2260   // everything parked + torn down
+};
 function playSplashTransition() {
   const fx    = document.getElementById('splash');
   if (!fx) return;
@@ -2019,31 +2142,51 @@ function playSplashTransition() {
   splat.style.opacity   = '1';
   splat.style.transform = 'translate(-50%,-50%) scale(0)';
   fx.classList.add('run');
-  try { transitionSound.currentTime = 0; transitionSound.play().catch(() => {}); } catch (e) {}   // transition music
+  playTransitionSfx();                             // sound fitted to the timeline above
 
-  // the juice splat bursts from the centre and swallows the screen
+  // The splat bursts OUT: fast off the mark, easing into its full size. (This used to run on
+  // an ease-IN curve, which sat still for ~200ms and then lurched — the main source of the
+  // jerk.) A little rotation keeps the blob from looking like a plain scale.
   splat.animate([
-    { transform: 'translate(-50%,-50%) scale(0) rotate(-15deg)', opacity: 1 },
-    { transform: 'translate(-50%,-50%) scale(4.8) rotate(9deg)', opacity: 1 }
-  ], { duration: 700, easing: 'cubic-bezier(0.55,0,1,0.45)', fill: 'forwards' });
+    { transform: 'translate(-50%,-50%) scale(0)    rotate(-14deg)' },
+    { transform: 'translate(-50%,-50%) scale(3.1)  rotate(-2deg)'  },
+    { transform: 'translate(-50%,-50%) scale(4.8)  rotate(9deg)'   }
+  ], { duration: TRANS.BURST, easing: 'cubic-bezier(0.16,0.84,0.3,1)', fill: 'forwards' });
   spawnSplashDrops(fx);
 
-  // once covered → the waves take over (same pink, seamless) and the splat fades
-  setTimeout(() => {
-    back.style.transform  = 'translateY(-16%)';    // solid pink cover
-    front.style.transform = 'translateY(-16%)';
-    splat.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, fill: 'forwards' });
-  }, 740);
+  // Each wave runs as ONE continuous animation — park, glide in behind the splat, hold at
+  // full cover, then drain away. Doing it as a single track (rather than a glide animation
+  // followed by a separate drain animation) means the phases cannot hand off with a jump:
+  // there is no seam for the two to disagree about. (.wave has no CSS transition either, so
+  // the old `style.transform = ...` cover was an instant teleport mid-effect.)
+  const glideAt = TRANS.BURST - TRANS.WAVE_IN + 40;   // starts while the splat still hides it
+  const coverAt = TRANS.BURST + 40;                   // home just as the splat peaks
+  const waveTrack = (delay) => {
+    const total = TRANS.DRAIN_AT + delay + TRANS.DRAIN;
+    const at = ms => Math.min(1, Math.max(0, ms / total));
+    return {
+      keyframes: [
+        { offset: 0,                          transform: 'translateY(-135%)' },
+        { offset: at(glideAt),                transform: 'translateY(-135%)',
+          easing: 'cubic-bezier(0.3,0.7,0.3,1)' },                    // glide in
+        { offset: at(coverAt),                transform: 'translateY(-16%)' },
+        { offset: at(TRANS.DRAIN_AT + delay), transform: 'translateY(-16%)',
+          easing: 'cubic-bezier(0.45,0.05,0.75,0.6)' },               // fall under gravity
+        { offset: 1,                          transform: 'translateY(116%)' }
+      ],
+      total: total
+    };
+  };
+  [[back, 0], [front, TRANS.STAGGER]].forEach(([w, delay]) => {
+    const tr = waveTrack(delay);
+    w.animate(tr.keyframes, { duration: tr.total, fill: 'forwards' });
+  });
 
-  // ...then the waves drain off the bottom, revealing the new scene
+  // ...and the splat crossfades away over the waves (same pink, so the seam is invisible)
   setTimeout(() => {
-    back.animate([{ transform: 'translateY(-16%)' }, { transform: 'translateY(116%)' }],
-      { duration: 1050, easing: 'cubic-bezier(0.55,0,1,0.45)', fill: 'forwards' });
-    setTimeout(() => {
-      front.animate([{ transform: 'translateY(-16%)' }, { transform: 'translateY(116%)' }],
-        { duration: 1050, easing: 'cubic-bezier(0.55,0,1,0.45)', fill: 'forwards' });
-    }, 120);
-  }, 980);
+    splat.animate([{ opacity: 1 }, { opacity: 0 }],
+      { duration: TRANS.FADE, easing: 'ease-in-out', fill: 'forwards' });
+  }, coverAt);
 
   // tidy up after the drain finishes
   setTimeout(() => {
@@ -2054,7 +2197,38 @@ function playSplashTransition() {
     splat.style.opacity   = '0';
     splat.style.transform = 'translate(-50%,-50%) scale(0)';
     fx.querySelectorAll('.splash-drop').forEach(d => d.remove());
-  }, 2250);
+  }, TRANS.CLEANUP);
+}
+
+// Fit the SFX to the visual timeline above.
+//  • transation.ogg opens with ~120ms of digital silence — skipped, so the whoosh is audible
+//    from the first frame of the burst instead of trailing it
+//  • its impact peak (~480-660ms in the file) then lands as the splat swallows the board
+//  • the file runs 3.06s but the wipe is done at ~2.1s, so the tail is faded out to finish
+//    WITH the drain rather than bleeding into the next scene
+const SFX_LEAD_IN = 0.12;                                  // measured dead air at the top
+function playTransitionSfx() {
+  const s = transitionSound;
+  if (!s) return;
+  const fadeStart = TRANS.DRAIN_AT + TRANS.DRAIN * 0.45;   // begin fading mid-drain
+  const fadeMs    = (TRANS.CLEANUP - 160) - fadeStart;
+  if (s._fade) { clearInterval(s._fade); s._fade = null; }
+  try {
+    s.volume = 0.7;
+    s.currentTime = SFX_LEAD_IN;
+    s.play().catch(() => {});
+  } catch (e) { return; }
+  setTimeout(() => {                                       // smooth tail-out, then stop
+    const v0 = s.volume, t0 = Date.now();
+    s._fade = setInterval(() => {
+      const k = Math.min(1, (Date.now() - t0) / Math.max(120, fadeMs));
+      s.volume = Math.max(0, v0 * (1 - k));
+      if (k >= 1) {
+        clearInterval(s._fade); s._fade = null;
+        try { s.pause(); s.currentTime = SFX_LEAD_IN; s.volume = v0; } catch (e) {}
+      }
+    }, 40);
+  }, fadeStart);
 }
 
 // a wet juice-splash sound: liquid rush → SPLAT at full cover → droplets → drain
@@ -2168,14 +2342,21 @@ function startTutorialIntro() {
 }
 
 // ── client walks in (right → left), then its order pops, then the guide ──
+// how long the walk-in takes — must match the ghostWalkIn animation on #client.arriving
+const WALK_IN_MS = 2800;
 function walkInClient() {
   if (dragonEl)  dragonEl.classList.remove('intro');     // dragon moves to its corner
   if (bannerEl)  bannerEl.classList.remove('introPos');  // bubble back to its normal spot
-  if (tutorial) typeBanner('Look! Our first customer.');
   clientEl.classList.remove('arriving');
   void clientEl.offsetWidth;
   clientEl.classList.add('arriving');
-  setTimeout(showThought, 2800);   // after the (slower) walk finishes
+  // "Look! Our first customer." used to be queued HERE, i.e. while the customer was still
+  // off-screen walking in. Hold it until the walk has actually finished, then open their
+  // order bubble once that line has been delivered.
+  setTimeout(() => {
+    if (tutorial) typeBanner('Look! Our first customer.', null, showThought);
+    else showThought();
+  }, WALK_IN_MS);
 }
 
 function showThought() {
@@ -2218,14 +2399,15 @@ function startGame() {
       typeBanner('Tap the button to pour juice.', () => {
         glassEl.classList.remove('glow');
       }, () => {
-        pourBtn.disabled = false;     // unlock pouring AFTER the dragon finishes explaining
+        allowPour();                  // unlock pouring AFTER the dragon finishes explaining
         showPourHand();               // …and nudge the POUR button now that it's tappable
       });
     } else {
       // solo rounds: the dragon host has left — there's no narration to wait for,
       // so enable pouring right away. Nothing should sit disabled.
-      pourBtn.disabled = false;
+      allowPour();
       showPourHand();
+      armPourNudge();               // …and keep nudging if they then sit idle
     }
   }, 700);
 }
@@ -2289,7 +2471,7 @@ function pour() {
   if (!tutorial) enableGlassDrag();
   hideHand();                           // pour clicked — remove the hand nudge
   hideGlassGhost();                     // fill changed — drop any stale drag cue
-  if (pairMode) armPourNudge();         // reset the idle-nudge timer on each pour
+  armPourNudge();                       // re-arm the idle nudge on every pour, any stage
 
   pourBtn.classList.add('pressed');
   setTimeout(() => pourBtn.classList.remove('pressed'), 140);
@@ -2319,7 +2501,7 @@ function pour() {
     hideHand();
     typeBanner('The glass is now half full.', null, () => {
       glassEl.classList.remove('glow');  // dialogue finished →
-      pourBtn.disabled = false;          //   re-enable the POUR button…
+      allowPour();                       //   re-enable the POUR button…
       showPourHand();                    //   …and show the hand nudge on it
     });
     return;                              // skip the generic narration for this tap
@@ -2339,7 +2521,7 @@ function pour() {
 function afterPour(r) {
   glassEl.classList.remove('glow');   // clear any previous highlight on each new pour
   // re-enable POUR only AFTER the dragon finishes the next instruction (one tap per line)
-  const enablePour = () => { pourBtn.disabled = false; };
+  const enablePour = () => { allowPour(); };   // never revives POUR on a full glass
   // ── tutorial (first customer, full glass): step-by-step narration ──
   if (tutorial) {
     // the 50% (half-full) beat is handled in pour() before afterPour runs
@@ -3060,8 +3242,9 @@ function tryAgain() {
   // LOCKED so the dragon can finish its line uninterrupted, and don't cue a hand.
   // The hint re-enables POUR and shows the hand once the dragon has fully exited.
   if (hintActive) { pourBtn.disabled = true; return; }
-  pourBtn.disabled = false;          // re-enable pouring immediately
-  if (pairMode) armPourNudge(); else showPourHand();   // customer mode: nudge only after ~11s idle
+  allowPour();                       // re-enable pouring immediately
+  armPourNudge();                    // idle nudge armed in every mode
+  if (!pairMode) showPourHand();     // solo: re-point at POUR straight away after a miss
 }
 
 function nextRound() {
@@ -3247,7 +3430,7 @@ function startPair() {
 
   // pouring opens once the first customer has arrived and its order box is showing (~2.8s walk-in).
   // no immediate hand — it only nudges the POUR button after ~11s of inactivity.
-  setTimeout(() => { pourBtn.disabled = false; armPourNudge(); }, 2900);
+  setTimeout(() => { allowPour(); armPourNudge(); }, 2900);
 }
 
 // Check pressed: the glass must match the ACTIVE (first-in-line) customer's order.
@@ -3356,7 +3539,7 @@ function discardDrinkAndRepour() {
     strawAdded = false; lemonAdded = false; servedLevel = null;
     fillPct = 0; setJuice(0); hasPoured = false; phase = 'play';
     checkBtn.style.display = 'none'; checkBtn.disabled = true;
-    pourBtn.disabled = false; armPourNudge();   // customer mode: nudge only after ~11s idle
+    allowPour(); armPourNudge();   // customer mode: nudge only after ~11s idle
   }, 600);
 }
 
@@ -3467,7 +3650,7 @@ function serveCustomer(c) {
         setTimeout(() => {
           fillPct = 0; setJuice(0); hasPoured = false; phase = 'play';
           refreshActive();                 // the new front opens its dialogue box
-          pourBtn.disabled = false; armPourNudge();   // nudge only after ~11s idle
+          allowPour(); armPourNudge();   // nudge only after ~11s idle
         }, 750);
       }, 1000);
     }, 500);
@@ -3612,7 +3795,7 @@ window.__GAME = {
     clientEl.style.opacity = '1';
     thoughtEl.classList.add('show');
     bannerTxt.textContent = r.ask || r.label;
-    bannerEl.classList.add('show');
+    bannerEl.classList.add('show'); startBubbleFollow();
     checkBtn.style.display = 'block';
     strawBox.classList.add('glow');
     lemonBox.classList.add('glow');
@@ -3741,7 +3924,7 @@ function devTargetPct(r) { return (r.target === 'half') ? 50 : 100; }
 // ① empty glass, ready to pour
 function devToPour(n) {
   devSetupScene(n);
-  pourBtn.disabled = false;
+  allowPour();
   showPourHand();
 }
 
@@ -3855,7 +4038,7 @@ function devPairJump(target, step, lastVisit) {
   // fast-forward the juice machine to the requested step
   const pct = (target === 'half') ? 50 : 100;
   if (step === 'pour') {
-    pourBtn.disabled = false;
+    allowPour();
     armPourNudge();                   // idle ~11s → hand nudge, same as real play
   } else if (step === 'check') {
     fillPct = pct; hasPoured = true; setJuice(fillPct);
@@ -4018,6 +4201,7 @@ function bootPreload() {
     setTimeout(() => {
       if (wrap) wrap.classList.add('done');
       if (btn)  btn.classList.add('ready');             // pop-in
+      playTitleMusic();                                 // title sting, in sync with the reveal
       setTimeout(() => { if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap); }, 500);
     }, 220);
   }
