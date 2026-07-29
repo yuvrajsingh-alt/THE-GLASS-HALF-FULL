@@ -1388,6 +1388,8 @@ const ROUNDS = [
 const STEP     = 25;   // % per tap — 25% each pour (4 taps = full, 2 = half)
 const HALF_MIN = 42, HALF_MAX = 58;
 const FULL_MIN = 88;
+// tutorial: how long POUR stays locked (glass glowing) when the half-way mark is reached
+const HALF_LOCK_MS = 1000;
 
 // ── state ────────────────────────────────────────────────────
 let level = 0, fillPct = 0, hasPoured = false, phase = 'intro', titleDone = false;
@@ -2503,18 +2505,23 @@ function pour() {
   setJuice(fillPct);
   if (fillPct >= 100) pourBtn.disabled = true;   // glass is full — disable pouring
 
-  // tutorial half-way beat: on the 2nd tap (50%) pause to teach "half full"
+  // Tutorial half-way beat — 2 taps (2 x STEP = 50%) reach a half glass:
+  //   • the "half full" line is announced
+  //   • POUR locks for exactly HALF_LOCK_MS while the glass glows, so the player notices
+  //   • then POUR unlocks and 2 more taps (4 total) fill it completely
+  // The lock is a fixed 1s timer rather than "until the line finishes" — the dialogue is
+  // never cut short, so tying the lock to it would hold POUR for the whole (slower) line.
   if (tutorial && fillPct === 50) {
-    pourBtn.disabled = true;             // lock the POUR button immediately (no over-pouring)
+    pourBtn.disabled = true;             // lock POUR immediately (no over-pouring past half)
     glassEl.classList.add('glow');       // glow the glass to draw attention
-    // (this used to clearVoiceQueue() so the beat could jump the queue, which skipped
-    //  whatever the dragon was still saying. It now simply queues in order.)
     hideHand();
-    typeBanner('The glass is now half full.', null, () => {
-      glassEl.classList.remove('glow');  // dialogue finished →
-      allowPour();                       //   re-enable the POUR button…
-      showPourHand();                    //   …and show the hand nudge on it
-    });
+    typeBanner('The glass is now half full.');
+    setTimeout(() => {
+      glassEl.classList.remove('glow');  // 1s later: stop glowing…
+      if (phase !== 'play') return;
+      allowPour();                       // …re-enable POUR (allowPour keeps it off at 100%)…
+      showPourHand();                    // …and nudge it for the next tap
+    }, HALF_LOCK_MS);
     return;                              // skip the generic narration for this tap
   }
 
