@@ -1757,6 +1757,23 @@ const NO_BOX = {
   'Tap on the lemons.': true
 };
 
+// ── tutorial opening: a short beat before each box appears ────
+// The first five tutorial lines used to snap straight from one box to the next. Each of
+// these now waits 0.3s before it starts, with the bubble hidden for that beat, so it fades
+// in fresh (the existing 0.25s bubbleFade) instead of the text just swapping underneath.
+// The whole line — box, typewriter and narration — starts together 0.3s late; nothing about
+// the lines themselves changes. This list ENDS at the pour instruction: every dialogue box
+// after "Tap the button to pour juice." behaves exactly as before.
+const GENTLE_INTRO_MS = 300;
+const GENTLE_INTRO = {
+  'Welcome to the Spooky Juice Stall!':   true,
+  'The customers will be arriving soon!': true,
+  'Look! Our first customer.':            true,
+  'Let us serve him.':                    true,
+  'Tap the button to pour juice.':        true   // ← last line with the beat; stop here
+};
+let gentleTimer = null;
+
 // silent lines (no recording) / playback failures linger for a readable beat — long enough
 // for the slow typewriter to finish the whole sentence, plus a moment to read it
 function estimateDuration(text) {
@@ -1775,6 +1792,23 @@ function pumpDialogue() {
   const item = voiceQueue.shift();
   if (!item) { refreshGlassGrab(); return; }  // queue drained → the glass may unlock
   voiceBusy = true;
+
+  // 0.3s beat before this box appears (tutorial opening lines only — see GENTLE_INTRO).
+  // The item goes back at the head of the queue and voiceBusy is held so nothing else can
+  // start; when the beat passes, the line runs through this function exactly as it normally
+  // would. Only the start is postponed — no text, pacing or callback order changes.
+  if (!item.beat && tutorial && GENTLE_INTRO[item.text]) {
+    item.beat = true;
+    voiceQueue.unshift(item);
+    if (bannerEl) bannerEl.classList.remove('show');   // hidden for the beat → fades back in
+    if (gentleTimer) clearTimeout(gentleTimer);
+    gentleTimer = setTimeout(() => {
+      gentleTimer = null;
+      voiceBusy = false;
+      pumpDialogue();
+    }, GENTLE_INTRO_MS);
+    return;
+  }
 
   // resolve the narration first, so the typewriter can pace itself to the clip's length
   const file = (dragonGone || skipDialogue) ? null : VOICE[item.text];
@@ -1855,6 +1889,7 @@ function clearVoiceQueue() {
   voiceBusy  = false;
   boxlessLine = false;
   stopTyping();                      // abort any in-progress typewriter reveal
+  if (gentleTimer) { clearTimeout(gentleTimer); gentleTimer = null; }   // drop a pending 0.3s beat
   if (voiceFallback) { clearTimeout(voiceFallback); voiceFallback = null; }
   if (currentVoice) {
     try { currentVoice.onended = null; currentVoice.pause(); currentVoice.currentTime = 0; } catch (e) {}
