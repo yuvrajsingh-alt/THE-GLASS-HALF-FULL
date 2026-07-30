@@ -3176,9 +3176,14 @@ function noCustomersLeft() {
   if (phase === 'gameover') return true;                 // completion flow already started
   if (!pairMode) return false;
   if (qIndex < customerOrder.length) return false;       // more are still due to arrive
-  // The customer being served holds their lane until they have walked off, so "only the one
-  // mid-delivery is left" also counts as the last one.
-  return queue.length === 0 || (queue.length === 1 && phase === 'leaving');
+  if (queue.length === 0) return true;                   // line empty, nothing left to come
+  // The customer mid-delivery holds their lane until they have walked off, so "the only one
+  // left is one who has ALREADY been served" is still the last customer. `served` is what
+  // separates that from the next customer waiting for their drink: testing phase === 'leaving'
+  // instead (as this did at first) wrongly suppressed the glass during the second-to-last
+  // delivery — by the time the coins fade, the served customer has been shifted out of the
+  // queue and queue[0] is the final, UNSERVED customer, who still needs a glass.
+  return queue.length === 1 && !!queue[0].served;
 }
 function showMachineGlass() {
   if (noCustomersLeft()) return;            // final customer served → no new glass, no pop-in
