@@ -1555,37 +1555,74 @@ transitionSound.volume = 0.7;
 // Set TITLE_MUSIC_LOOP = true if you swap in a track built to loop seamlessly.
 const TITLE_MUSIC_SRC  = 'audio/ready set serve.ogg';
 const TITLE_MUSIC_LOOP = false;
+const TITLE_MUSIC_VOL  = 0.85;
 // routed through regAudio so the boot preloader streams it and hands it a blob: URL
 const titleMusic = TITLE_MUSIC_SRC ? regAudio(TITLE_MUSIC_SRC) : null;
-if (titleMusic) { titleMusic.loop = TITLE_MUSIC_LOOP; titleMusic.volume = 0.85; }
+if (titleMusic) { titleMusic.loop = TITLE_MUSIC_LOOP; titleMusic.volume = TITLE_MUSIC_VOL; }
+// play() is ASYNCHRONOUS. The element is preload='none' with a blob: src, so a play()
+// started on the title can still be resolving when Play is tapped — pausing in between is
+// not enough on its own, the clip gets a few audible frames once the promise lands. So we
+// track the in-flight promise and re-kill on resolve, and latch `titleMusicOff` so nothing
+// can start it again until we deliberately go back to the title screen.
+let titlePlayPromise = null;
+let titleMusicOff    = false;
 function playTitleMusic() {
-  if (!titleMusic || titleDone) return;                       // game started (Play tapped) — stay off
-  playTitleSting();                                           // same clip, same safe start
-}
-// The "Ready Set Serve!" sting, fired by the Play TAP itself.
-// Separate from playTitleMusic() for two reasons: that one bails out once titleDone is set,
-// and a tap is a real user gesture — the one moment the browser is guaranteed to allow
-// playback. Firing it earlier (on the preloader reveal) was silently blocked by autoplay
-// policy, and leaveTitle() then stopped it a few ms later, so it never actually played.
-function playTitleSting() {
-  if (!titleMusic) return;
-  // play() FIRST, and rewind separately. The element is preload='none' with a blob: src, so
-  // until it has loaded its readyState is HAVE_NOTHING and assigning currentTime throws
-  // InvalidStateError — which, when both sat in one try block, skipped play() entirely and
-  // the catch swallowed it. That is why no sound came out in a real browser.
+  if (!titleMusic || titleDone || titleMusicOff) return;       // game started (Play tapped) — stay off
   try {
+    titleMusic.volume = TITLE_MUSIC_VOL;                       // undo the mute stopTitleMusic() applies
+    // play() FIRST, rewind separately: while readyState is HAVE_NOTHING, assigning
+    // currentTime throws InvalidStateError, and in one try block that skipped play() outright.
     const p = titleMusic.play();
-    if (p && p.catch) p.catch(() => {});
+    if (p && p.then) {
+      titlePlayPromise = p;
+      p.then(() => {
+        titlePlayPromise = null;
+        // Play was tapped while this play() was in flight → the clip is starting now. Kill it.
+        if (titleDone || titleMusicOff) stopTitleMusic();
+      }).catch(() => { titlePlayPromise = null; });
+    }
   } catch (e) {}
   try { if (titleMusic.currentTime > 0.05) titleMusic.currentTime = 0; } catch (e) {}
 }
 function stopTitleMusic() {
   if (!titleMusic) return;
-  try { titleMusic.pause(); titleMusic.currentTime = 0; } catch (e) {}
+  try { titleMusic.pause(); } catch (e) {}
+  try { titleMusic.volume = 0; } catch (e) {}   // silent even if the browser resumes a pending play()
+  try { titleMusic.currentTime = 0; } catch (e) {}
+  // a play() still resolving would un-pause us a tick later — pause it again when it lands
+  if (titlePlayPromise && titlePlayPromise.then) {
+    titlePlayPromise.then(() => {
+      try { titleMusic.pause(); titleMusic.currentTime = 0; } catch (e) {}
+    }).catch(() => {});
+  }
 }
-// (No pointerdown pre-warm here any more. It used to start the sting on the pointerDOWN of
-//  the Play tap, and leaveTitle()'s click handler then stopped it milliseconds later — so
-//  the clip was cut off before a single frame was audible. leaveTitle now plays it instead.)
+// Leaving the title for good: stop, and latch it off so no stray handler can restart it.
+function killTitleMusic() {
+  titleMusicOff = true;
+  stopTitleMusic();
+}
+// Coming back to the title screen (restart / dev jump): unlatch, then start it again.
+function restartTitleMusic() {
+  titleMusicOff = false;
+  playTitleMusic();
+}
+// The sting fires when the title is actually ready — i.e. when the preloader reveals the
+// Play button (see reveal() in bootPreload), not at 0% while the bar is still filling.
+// If the browser blocks autoplay, the first interaction starts it instead — but NOT the
+// Play tap itself: starting the clip on that pointerdown only to stop it on the click
+// milliseconds later is exactly the overlap blip we are fixing.
+function titleGestureStart(e) {
+  if (e && e.target && e.target.closest && e.target.closest('#playBtn')) return;
+  document.removeEventListener('pointerdown', titleGestureStart);
+  playTitleMusic();
+}
+document.addEventListener('pointerdown', titleGestureStart);
+// …and kill it on the POINTERDOWN of the Play tap — one frame earlier than the click that
+// runs leaveTitle(), so the title clip is already down before the screen swaps.
+(() => {
+  const pb = document.getElementById('playBtn');
+  if (pb) pb.addEventListener('pointerdown', () => { if (assetsReady) killTitleMusic(); });
+})();
 
 // ── gameplay music (starts when Play is tapped; loops through the game) ──
 const gameMusic = regAudio('sxf/an sfx.ogg');
@@ -2261,9 +2298,9 @@ function leaveTitle() {
   if (!assetsReady) return;        // still preloading â€” the button is hidden, but this also
                                    // blocks keyboard / programmatic / dev starts
   titleDone = true;
+  killTitleMusic();                // Play tapped → title music off (and latched off)…
   popSound();                      // pop on the start button
-  playTitleSting();                // "Ready Set Serve!" — plays on the tap, left to finish
-  playGameMusic();                 // …and the gameplay music starts underneath it
+  playGameMusic();                 // …and the gameplay music starts, with nothing under it
   const t = document.getElementById('title');
   t.style.display = 'none';        // no shutter — go straight into the game
   startTutorialIntro();
@@ -3687,7 +3724,7 @@ function restartGame() {
   // no "Play Again" button — the title always shows the standard Play button
   const pb = document.getElementById('playBtn');
   if (pb) { pb.src = 'assets map/start-button.webp'; pb.alt = 'Play'; pb.classList.remove('again'); }
-  stopGameMusic(); playTitleMusic();   // back on the thumbnail → gameplay music off, title music on
+  stopGameMusic(); restartTitleMusic();   // back on the thumbnail → gameplay music off, title music on
   initRound();
 }
 
@@ -3746,6 +3783,7 @@ document.addEventListener('pointerdown', (e) => {
   }
 });
 function devResetScene() {
+  killTitleMusic();          // any dev jump leaves the title → title clip must not linger
   clearVoiceQueue();
   hideHand();
   if (typeof hideDragGhost === 'function') hideDragGhost();
@@ -3785,7 +3823,7 @@ function devGoToTitle() {
   if (dragonEl) { dragonEl.classList.remove('exitRight'); dragonEl.style.display = ''; dragonEl.style.visibility = ''; }
   const t = document.getElementById('title');
   if (t) { t.style.display = ''; t.classList.remove('leaving'); }
-  stopGameMusic(); playTitleMusic(); // back on the thumbnail → gameplay music off, title music on
+  stopGameMusic(); restartTitleMusic(); // back on the thumbnail → gameplay music off, title music on
   initRound();
 }
 // jump straight to the game-over / end screen (replays the board drop-in each time)
@@ -4131,8 +4169,7 @@ function bootPreload() {
     setTimeout(() => {
       if (wrap) wrap.classList.add('done');
       if (btn)  btn.classList.add('ready');             // pop-in
-      // (the sting is NOT fired here — with no user gesture yet, autoplay policy blocks it.
-      //  It plays on the Play tap instead; see playTitleSting() in leaveTitle.)
+      playTitleMusic();                                 // title sting, in sync with the reveal
       setTimeout(() => { if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap); }, 500);
     }, 220);
   }
