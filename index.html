@@ -209,12 +209,10 @@ body {
 /* ── dragon's speech bubble (CSS-drawn so it sizes cleanly to any text) ── */
 #dragonBubble {
   position: absolute;
-  /* left/top are a fallback only — positionDragonBubble() drives them every frame so the
-     bubble stays attached to the dragon. NO transition on left/top: the per-frame updates
-     would rubber-band against it. */
-  left: 86.83%;
+  left: 86.83%;                /* anchored by centre so the bubble stays put as text changes */
   top: 21.67%;
   transform: translateX(-50%);
+  transition: left 0.6s ease, top 0.6s ease;
   width: max-content;          /* hug the text … */
   max-width: 19%;              /* … up to a sensible cap, then wrap onto more lines */
   background: #fbe9cf;         /* peach fill */
@@ -1564,14 +1562,22 @@ function playTitleMusic() {
   if (!titleMusic || titleDone) return;                       // game started (Play tapped) — stay off
   try { titleMusic.currentTime = 0; titleMusic.play().catch(() => {}); } catch (e) {}
 }
+// The "Ready Set Serve!" sting, fired by the Play TAP itself.
+// Separate from playTitleMusic() for two reasons: that one bails out once titleDone is set,
+// and a tap is a real user gesture — the one moment the browser is guaranteed to allow
+// playback. Firing it earlier (on the preloader reveal) was silently blocked by autoplay
+// policy, and leaveTitle() then stopped it a few ms later, so it never actually played.
+function playTitleSting() {
+  if (!titleMusic) return;
+  try { titleMusic.currentTime = 0; titleMusic.play().catch(() => {}); } catch (e) {}
+}
 function stopTitleMusic() {
   if (!titleMusic) return;
   try { titleMusic.pause(); titleMusic.currentTime = 0; } catch (e) {}
 }
-// The sting fires when the title is actually ready — i.e. when the preloader reveals the
-// Play button (see reveal() in bootPreload), not at 0% while the bar is still filling.
-// If the browser blocks autoplay, the first interaction starts it instead.
-document.addEventListener('pointerdown', playTitleMusic, { once: true });
+// (No pointerdown pre-warm here any more. It used to start the sting on the pointerDOWN of
+//  the Play tap, and leaveTitle()'s click handler then stopped it milliseconds later — so
+//  the clip was cut off before a single frame was audible. leaveTitle now plays it instead.)
 
 // ── gameplay music (starts when Play is tapped; loops through the game) ──
 const gameMusic = regAudio('sxf/an sfx.ogg');
@@ -1622,13 +1628,6 @@ let voiceQueue   = [];
 let voiceBusy    = false;
 let currentVoice = null;
 let voiceFallback = null;
-// ── dialogue pacing ──────────────────────────────────────────
-// A beat of silence is held between one line finishing and the next appearing, so lines
-// never run into each other and the player has time to read and take in each one.
-// The finished line stays on screen through the pause (it is not blanked), and the dragon
-// stops animating — so it reads as a breath between sentences, not a gap.
-const DIALOGUE_GAP_MS = 1700;
-let dialogueGap = null;
 // ── dragon typewriter ────────────────────────────────────────
 // Reveal the line one character at a time, with a blinking caret and a soft
 // click per keystroke. The not-yet-typed tail is kept in the layout (invisible)
@@ -1717,9 +1716,7 @@ const NO_BOX = {
 // for the slow typewriter to finish the whole sentence, plus a moment to read it
 function estimateDuration(text) {
   const len = text ? text.length : 0;
-  // long enough for the typewriter to finish the whole sentence (len * TYPE_MS) PLUS a
-  // beat to actually read it before the line is retired
-  return Math.min(10500, Math.max(2800, len * TYPE_MS + 1200));
+  return Math.min(9500, Math.max(2400, len * TYPE_MS + 800));
 }
 
 function enqueueDialogue(text, onDone, onEnd) {
@@ -1753,7 +1750,7 @@ function pumpDialogue() {
       hideHand();
       boxlessLine = true;
     } else {
-      if (bannerEl) { bannerEl.classList.add('show'); startBubbleFollow(); }   // bubble tracks the dragon
+      if (bannerEl)  bannerEl.classList.add('show');
       if (bannerTxt) {
         if (skipDialogue) { stopTyping(); bannerTxt.classList.remove('typing'); bannerTxt.textContent = item.text; }
         else              typeDragon(item.text, clipMs);   // typewriter reveal, paced to the narration
@@ -1774,13 +1771,8 @@ function pumpDialogue() {
     dragonTalk(false);                      // stopped talking — freeze the dragon
     boxlessLine = false;                    // box-less line over — cues need a visible box again
     if (item.onEnd) item.onEnd();           // this line's audio has fully finished
-    // hold a beat before the next line. voiceBusy stays TRUE through the pause, so a line
-    // queued during it still waits its turn instead of jumping the gap.
-    dialogueGap = setTimeout(() => {
-      dialogueGap = null;
-      voiceBusy = false;
-      pumpDialogue();
-    }, skipDialogue ? 0 : DIALOGUE_GAP_MS);
+    voiceBusy = false;
+    pumpDialogue();
   };
 
   if (clip) {                                 // (file/clip resolved at the top of this function)
@@ -1803,16 +1795,6 @@ function pumpDialogue() {
   }
 }
 
-// Interaction-driven "stop the narration": used when the player acts and the instruction they
-// were being given is now moot. During the TUTORIAL this does NOTHING -- the walkthrough
-// depends on the player hearing every line in full, so touching the glass mid-line must not
-// cut it off or drop the lines queued behind it.
-// Round resets still call clearVoiceQueue() directly; those SHOULD drop stale lines.
-function stopNarrationOnAction() {
-  if (tutorial) return;
-  clearVoiceQueue();
-  if (bannerEl) bannerEl.classList.remove('show');
-}
 // drop any pending/playing narration (used on round reset)
 function clearVoiceQueue() {
   voiceQueue = [];
@@ -1820,7 +1802,6 @@ function clearVoiceQueue() {
   boxlessLine = false;
   stopTyping();                      // abort any in-progress typewriter reveal
   if (voiceFallback) { clearTimeout(voiceFallback); voiceFallback = null; }
-  if (dialogueGap)   { clearTimeout(dialogueGap);   dialogueGap = null; }   // drop a pending pause
   if (currentVoice) {
     try { currentVoice.onended = null; currentVoice.pause(); currentVoice.currentTime = 0; } catch (e) {}
     currentVoice = null;
@@ -1831,69 +1812,7 @@ function clearVoiceQueue() {
 // ── dragon animation: the GIF only plays while the dragon is speaking ──
 // An animated webp can't be paused, so when idle we draw the CURRENT frame onto
 // a canvas placed over the dragon and hide the live image. We only DRAW to the
-// ── keep the speech bubble attached to the dragon ─────────────
-// The bubble used to be positioned independently of the dragon: each had its own hard-coded
-// left/top, paired by hand (#dragon.intro <-> #dragonBubble.introPos). Any time those fell
-// out of step — and during the dragon's transform ANIMATIONS (hintIn / exitRight), which the
-// bubble had no counterpart for — the bubble was left stranded with its tail pointing at
-// nothing. It now tracks the dragon's live on-screen position every frame instead, so it
-// follows left/right/forward/backward movement of every kind, including resizes.
-
-// The dragon is object-fit:contain inside an oversized box, so the element rect is NOT where
-// the art is. Work out the letterboxed art rect (same maths as freezeDragon uses).
-function dragonArtRect() {
-  const r = dragonEl.getBoundingClientRect();
-  const iw = dragonEl.naturalWidth, ih = dragonEl.naturalHeight;
-  if (!iw || !ih) return r;
-  const s = Math.min(r.width / iw, r.height / ih);
-  const dw = iw * s, dh = ih * s;
-  return { left: r.left + (r.width - dw) / 2, top: r.top + (r.height - dh) / 2, width: dw, height: dh };
-}
-let bubbleFollowRaf = null;
-function positionDragonBubble() {
-  if (!bannerEl || !dragonEl) return;
-  if (dragonEl.style.display === 'none' || dragonEl.style.visibility === 'hidden') return;
-  const gr = gcEl.getBoundingClientRect();
-  const a  = dragonArtRect();
-  if (!a.width || !gr.width) return;
-  const bw = bannerEl.offsetWidth, bh = bannerEl.offsetHeight;
-  if (!bw || !bh) return;
-  const pad = gr.width * 0.012;
-  // The tail is a CSS triangle hanging BELOW the box (border: 0.95cqw) at left:58%, so the
-  // bubble's true bottom edge is bh + tailH, and it points down-right of centre.
-  const tailH    = gr.width * 0.0095;
-  const tailFrac = 0.58;
-  const headX = (a.left + a.width * 0.42) - gr.left;   // where the head actually sits
-  // horizontally: offset so the TAIL TIP lands on the head (not the bubble's centre),
-  // then clamp so the bubble never runs off the board
-  const half = bw / 2;
-  let cx = headX - (tailFrac - 0.5) * bw;
-  cx = Math.max(half + pad, Math.min(gr.width - half - pad, cx));
-  // vertically: the whole bubble INCLUDING the tail sits just above the horn tips.
-  // HORN_TOP_FRAC is measured from the artwork — the topmost opaque row sits 2-8px into the
-  // 514px-tall image across all 25 animation frames, so the horns are essentially at the top
-  // of the art rect. Referencing the horn line (rather than the image box) lets the bubble sit
-  // low and close to him while still never overlapping the face.
-  const HORN_TOP_FRAC = 0.004;
-  const hornY = a.top + a.height * HORN_TOP_FRAC;
-  const clear = gr.height * 0.012;                 // small breathing gap above the horns
-  let ty = hornY - (bh + tailH + clear) - gr.top;
-  ty = Math.max(pad, ty);
-  bannerEl.style.left = (cx / gr.width  * 100).toFixed(2) + '%';
-  bannerEl.style.top  = (ty / gr.height * 100).toFixed(2) + '%';
-}
-// follow every frame while the bubble is up; the loop retires itself once it hides
-function startBubbleFollow() {
-  if (bubbleFollowRaf) return;
-  const step = () => {
-    if (!bannerEl || !bannerEl.classList.contains('show')) { bubbleFollowRaf = null; return; }
-    positionDragonBubble();
-    bubbleFollowRaf = requestAnimationFrame(step);
-  };
-  positionDragonBubble();                 // place it before the first paint, no visible jump
-  bubbleFollowRaf = requestAnimationFrame(step);
-}
-
+// canvas (never read it), so this also works when the page runs from file://.
 let dragonTalking = true, dragonFreezeCv = null;
 function freezeDragon() {
   if (!dragonEl || dragonGone || !dragonEl.naturalWidth) return;
@@ -2335,8 +2254,8 @@ function leaveTitle() {
                                    // blocks keyboard / programmatic / dev starts
   titleDone = true;
   popSound();                      // pop on the start button
-  stopTitleMusic();                // Play tapped → title music off…
-  playGameMusic();                 // …and the gameplay music starts
+  playTitleSting();                // "Ready Set Serve!" — plays on the tap, left to finish
+  playGameMusic();                 // …and the gameplay music starts underneath it
   const t = document.getElementById('title');
   t.style.display = 'none';        // no shutter — go straight into the game
   startTutorialIntro();
@@ -2352,21 +2271,14 @@ function startTutorialIntro() {
 }
 
 // ── client walks in (right → left), then its order pops, then the guide ──
-// how long the walk-in takes — must match the ghostWalkIn animation on #client.arriving
-const WALK_IN_MS = 2800;
 function walkInClient() {
   if (dragonEl)  dragonEl.classList.remove('intro');     // dragon moves to its corner
   if (bannerEl)  bannerEl.classList.remove('introPos');  // bubble back to its normal spot
+  if (tutorial) typeBanner('Look! Our first customer.');
   clientEl.classList.remove('arriving');
   void clientEl.offsetWidth;
   clientEl.classList.add('arriving');
-  // "Look! Our first customer." used to be queued HERE, i.e. while the customer was still
-  // off-screen walking in. Hold it until the walk has actually finished, then open their
-  // order bubble once that line has been delivered.
-  setTimeout(() => {
-    if (tutorial) typeBanner('Look! Our first customer.', null, showThought);
-    else showThought();
-  }, WALK_IN_MS);
+  setTimeout(showThought, 2800);   // after the (slower) walk finishes
 }
 
 function showThought() {
@@ -2507,8 +2419,7 @@ function pour() {
   if (tutorial && fillPct === 50) {
     pourBtn.disabled = true;             // lock the POUR button immediately (no over-pouring)
     glassEl.classList.add('glow');       // glow the glass to draw attention
-    // (this used to clearVoiceQueue() so the beat could jump the queue, which skipped
-    //  whatever the dragon was still saying. It now simply queues in order.)
+    clearVoiceQueue();                   // drop any pending line so the beat shows right now
     hideHand();
     typeBanner('The glass is now half full.', null, () => {
       glassEl.classList.remove('glow');  // dialogue finished →
@@ -2970,7 +2881,8 @@ function onGlassDown(e) {
   hideHand();
   hideGlassGhost();                     // player grabbed it — drop the ghost cue + tray glow
   cancelPourNudge();
-  stopNarrationOnAction();              // tutorial: the line plays on, never cut off
+  clearVoiceQueue();
+  if (bannerEl) bannerEl.classList.remove('show');
   glassEl.classList.remove('glow');
   glassEl.style.transition = 'none';
   glassDragSX = e.clientX; glassDragSY = e.clientY;
@@ -3104,7 +3016,8 @@ function onServeDown(e) {
   dragActive = true;
   hideHand();                       // player grabbed the glass
   cancelDragIdleNudge();            // interaction → stop the ghost + idle timer
-  stopNarrationOnAction();          // drop the drag line -- but never during the tutorial
+  clearVoiceQueue();                // stop the "Drag…" narration
+  if (bannerEl) bannerEl.classList.remove('show');   // hide the dialogue box once dragging starts
   servedSet.classList.remove('hintBob');
   servedSet.style.transition = 'none';
   dragStartX = e.clientX; dragStartY = e.clientY;
@@ -3152,7 +3065,8 @@ function onServeUp(e) {
 
 function deliverToCustomer() {
   hideHand();
-  stopNarrationOnAction();                            // not during the tutorial -- lines finish
+  clearVoiceQueue();                                  // stop the "Drag…" narration
+  if (bannerEl) bannerEl.classList.remove('show');    // dialogue box disappears immediately on drop
   hideThought();                                      // remove the customer's order (glass) bubble
   phase = 'leaving';
   const isGhost = (ROUNDS[level].skin === 'ghost');
@@ -3196,7 +3110,8 @@ function check() {
   phase = 'done';
   checkBtn.disabled = true;
   hideHand();                       // check tapped — remove the hand nudge
-  stopNarrationOnAction();          // drop the now-moot instruction (never in the tutorial)
+  clearVoiceQueue();                // check tapped — skip the "Tap the Check button." narration
+  if (bannerEl) bannerEl.classList.remove('show');
 
   const r = ROUNDS[level];
   const correct = r.target === 'half'
@@ -3802,7 +3717,7 @@ window.__GAME = {
     clientEl.style.opacity = '1';
     thoughtEl.classList.add('show');
     bannerTxt.textContent = r.ask || r.label;
-    bannerEl.classList.add('show'); startBubbleFollow();
+    bannerEl.classList.add('show');
     checkBtn.style.display = 'block';
     strawBox.classList.add('glow');
     lemonBox.classList.add('glow');
@@ -4208,7 +4123,8 @@ function bootPreload() {
     setTimeout(() => {
       if (wrap) wrap.classList.add('done');
       if (btn)  btn.classList.add('ready');             // pop-in
-      playTitleMusic();                                 // title sting, in sync with the reveal
+      // (the sting is NOT fired here — with no user gesture yet, autoplay policy blocks it.
+      //  It plays on the Play tap instead; see playTitleSting() in leaveTitle.)
       setTimeout(() => { if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap); }, 500);
     }, 220);
   }
