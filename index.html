@@ -3979,7 +3979,8 @@ function serveCustomer(c) {
 // ── end-screen confetti (carnival colours, rains over the celebration video) ──
 const CONFETTI_COLORS = ['#FF7ED8', '#CE9EFF', '#FFD84D', '#7FE0FF', '#FF9E5A', '#FFFFFF', '#8BE78B'];
 let confettiTimer = null;
-let endWatchdog = null;      // third escape path out of the end screen (see endGame)
+let endWatchdog = null;      // safety net that freezes the end video if 'ended' never fires
+let endFrozen = false;       // true once the end video is parked on its final frame
 function makeConfettiPiece() {
   const box = document.getElementById('confetti');
   if (!box) return;
@@ -4023,27 +4024,44 @@ function endGame() {
   if (end) end.classList.add('show');
   startConfetti();                                   // celebratory confetti over the video
 
-  // play the celebration video; when it finishes → back to the title screen
+  // Play the celebration video ONCE and hold it on its final frame. It used to jump straight
+  // back to the title when 'ended' fired; now the last frame stays on screen as the completion
+  // card and waits for a tap (see the #gameEnd handler under restartGame).
   stopGameMusic();                                   // the video has its own audio
   const v = document.getElementById('endVideo');
+  endFrozen = false;
   if (v) {
+    v.loop = false;                                  // explicit: never repeat, never replay
     v.currentTime = 0;
     if (endWatchdog) { clearTimeout(endWatchdog); endWatchdog = null; }
-    const leave = () => {                            // whichever path fires first wins
+    // playback is over → settle on the frame that is already painted. pause() is all it takes:
+    // after 'ended' the element keeps showing the last frame, and there is no poster to fall
+    // back to, so currentTime is deliberately left alone — seeking here would only risk a
+    // visible flash. Nothing re-arms playback afterwards.
+    const freeze = () => {
       if (endWatchdog) { clearTimeout(endWatchdog); endWatchdog = null; }
-      restartGame();
+      v.onended = null; v.onloadedmetadata = null;
+      try { v.pause(); } catch (e) {}
+      endFrozen = true;                              // …and a tap may now leave the end screen
+      // the celebration is over: stop spawning confetti (pieces already falling finish their
+      // fall and remove themselves). Without this the spawner would run for as long as the
+      // card is up — it used to stop here too, when this moment returned to the title.
+      if (confettiTimer) { clearInterval(confettiTimer); confettiTimer = null; }
     };
     const armWatchdog = () => {                      // re-armed once the duration is known
       if (endWatchdog) clearTimeout(endWatchdog);
       const dur = (isFinite(v.duration) && v.duration > 0) ? v.duration : 5;
-      endWatchdog = setTimeout(leave, dur * 1000 + 3000);
+      endWatchdog = setTimeout(freeze, dur * 1000 + 3000);   // 'ended' never arrived → freeze anyway
     };
     v.onloadedmetadata = armWatchdog;
     armWatchdog();                                   // covers metadata never arriving
-    v.onended = leave;
+    v.onended = freeze;
     v.onerror = () => setTimeout(restartGame, 1500); // video missing/broken → still reach the title
     const p = v.play();
     if (p) p.catch(() => {                           // autoplay-with-sound blocked → retry muted
+      if (endFrozen) return;                         // already parked on the final frame: a play()
+                                                     // promise that rejects this late must never
+                                                     // start the clip up again
       v.muted = true;
       v.play().catch(() => setTimeout(restartGame, 1500));
     });
@@ -4055,6 +4073,7 @@ function endGame() {
 // video finished (or Play Again) → full restart from the title screen
 function restartGame() {
   if (endWatchdog) { clearTimeout(endWatchdog); endWatchdog = null; }   // leaving the end screen
+  endFrozen = false;
   const end = document.getElementById('gameEnd'); if (end) end.classList.remove('show');
   stopConfetti();
   const v = document.getElementById('endVideo');
@@ -4079,6 +4098,14 @@ function restartGame() {
   stopGameMusic(); restartTitleMusic();   // back on the thumbnail → gameplay music off, title music on
   initRound();
 }
+
+// The frozen end card holds its final frame until the player taps it — that tap is the
+// "user action" that leaves. It is inert while the video is still playing, so the
+// celebration can't be skipped; only the parked final frame is tappable.
+(() => {
+  const end = document.getElementById('gameEnd');
+  if (end) end.addEventListener('pointerdown', () => { if (endFrozen) restartGame(); });
+})();
 
 // ── pulse ring ────────────────────────────────────────────────
 function addPulse() {
