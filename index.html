@@ -371,7 +371,14 @@ body {
   top: 76.79%;
   width: 6.7%;
   height: 15.2%;
-  z-index: 6;
+  /* z9 — ABOVE the tray (z8). At z6 the tray painted over the glass wherever the two
+     overlapped: only .dragging lifted it (z40), so any moment the glass sat over the tray
+     without that class (the frame the drag ends, the glide home, a cancelled pointer) clipped
+     it behind the tray. z9 makes it unconditional, in every state.
+     Nothing that overlaps the glass moves: the pour stream, its splash droplets and the
+     drag-hint ghost clone are all z9 too and come later in paint order, so they still draw
+     over the glass exactly as before. */
+  z-index: 9;
   pointer-events: none;
 }
 /* completely-full look: swap the drawn glass (body + rising liquid + half-line) for the
