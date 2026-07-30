@@ -692,21 +692,16 @@ body {
   z-index: 12;
   transition: transform 0.08s ease, filter 0.08s ease;
 }
-/* a little glow while the button is enabled (tappable) — hugs the button shape */
-#pourBtn:not(:disabled) { animation: pourReady 1.2s ease-in-out infinite; }
-@keyframes pourReady {
-  0%,100% { filter: drop-shadow(0 0 3px rgba(255,215,0,0.55)); }
-  50%     { filter: drop-shadow(0 0 9px rgba(255,215,0,0.95)); }
-}
-/* press feedback — the button presses in: shrinks and darkens (image stays visible) */
+/* (the golden ready-glow — a pulsing drop-shadow halo behind the button — has been removed
+   along with its @keyframes pourReady. The button now sits flat against the machine art in
+   every state; nothing glows behind it.) */
+/* press feedback — the button presses in: shrinks and darkens (image stays visible, no glow) */
 #pourBtn:not(:disabled):active,
 #pourBtn.pressed {
   transform: scale(0.9);
-  filter: brightness(0.82) drop-shadow(0 0 6px rgba(255,215,0,0.8));
-  animation: none;
+  filter: brightness(0.82);
 }
-/* Disabled POUR (glass already full, or locked while the dragon speaks). The ready-glow
-   animation above only runs on :not(:disabled), so it stops here.
+/* Disabled POUR (glass already full, or locked while the dragon speaks).
    Kept CRISP: there is no blur and no transform. The old scale(0.96) was the real culprit —
    a fractional downscale resamples the bitmap artwork, which softened the POUR text, the
    outline and the highlights; heavy brightness(0.62) + opacity 0.55 washed out what was
