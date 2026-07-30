@@ -188,7 +188,12 @@ body {
   z-index: 9;                 /* in front of the counter (z4) — stands beside the bar, fully visible */
   pointer-events: none;
   transform-origin: center bottom;
-  transition: left 0.6s ease, top 0.6s ease, width 0.6s ease;
+  /* every position change is one slow, symmetric ease-in/ease-out glide — it accelerates and
+     settles instead of snapping. The bubble below uses the SAME duration and curve so the
+     dragon and its dialogue box always travel as one group. Keep DRAGON_MOVE_MS in sync. */
+  transition: left 0.9s cubic-bezier(0.45, 0.05, 0.55, 0.95),
+              top  0.9s cubic-bezier(0.45, 0.05, 0.55, 0.95),
+              width 0.9s cubic-bezier(0.45, 0.05, 0.55, 0.95);
 }
 /* welcome intro — dragon stands centre-stage, then moves to its corner */
 #dragon.intro { left: 34%; top: 35%; }
@@ -212,7 +217,9 @@ body {
   left: 86.83%;                /* anchored by centre so the bubble stays put as text changes */
   top: 21.67%;
   transform: translateX(-50%);
-  transition: left 0.6s ease, top 0.6s ease;
+  /* same duration + curve as #dragon → the box never drifts out of step with the dragon */
+  transition: left 0.9s cubic-bezier(0.45, 0.05, 0.55, 0.95),
+              top  0.9s cubic-bezier(0.45, 0.05, 0.55, 0.95);
   width: max-content;          /* hug the text … */
   max-width: 19%;              /* … up to a sensible cap, then wrap onto more lines */
   background: #fbe9cf;         /* peach fill */
@@ -1789,6 +1796,8 @@ function enqueueDialogue(text, onDone, onEnd) {
 function pumpDialogue() {
   refreshGlassGrab();                       // dialogue state changed → re-gate the glass
   if (voiceBusy) return;                    // a line is still narrating — wait for it
+  if (dragonMoving) return;                 // dragon still gliding — no box appears mid-move
+                                            // (endDragonMove pumps again once it lands)
   const item = voiceQueue.shift();
   if (!item) { refreshGlassGrab(); return; }  // queue drained → the glass may unlock
   voiceBusy = true;
@@ -1890,6 +1899,7 @@ function clearVoiceQueue() {
   boxlessLine = false;
   stopTyping();                      // abort any in-progress typewriter reveal
   if (gentleTimer) { clearTimeout(gentleTimer); gentleTimer = null; }   // drop a pending 0.3s beat
+  resetDragonMove();                 // …and any dragon-move gate, so the queue is never held shut
   if (voiceFallback) { clearTimeout(voiceFallback); voiceFallback = null; }
   if (currentVoice) {
     try { currentVoice.onended = null; currentVoice.pause(); currentVoice.currentTime = 0; } catch (e) {}
@@ -1943,6 +1953,48 @@ if (dragonEl) {
   const startIdle = () => { dragonTalking = true; dragonTalk(false); };  // freeze until it speaks
   if (dragonEl.complete && dragonEl.naturalWidth) startIdle();
   else dragonEl.addEventListener('load', startIdle, { once: true });
+}
+
+// ── dragon movement: one smooth glide, THEN the box appears ────
+// Two things made the old move look abrupt:
+//   1. while the dragon is idle the live <img> is hidden behind the frozen canvas above, so a
+//      class change glided an invisible element and the dragon simply reappeared at the far
+//      end — it never visibly travelled at all.
+//   2. the next dialogue box was shown in the same breath as the class change, so it sat there
+//      through the whole trip.
+// glideDragon() fixes both: it shows the live image for the trip (so the CSS ease-in/ease-out
+// glide is actually seen) and HOLDS the dialogue queue until the dragon lands. The box — and
+// the dragon's talk UI with it — then fade in together, at the destination, never mid-move.
+const DRAGON_MOVE_MS = 900;          // keep in sync with the #dragon / #dragonBubble transition
+let dragonMoving = false, dragonMoveTimer = null, dragonMoveEnd = null;
+// clear the gate without releasing the queue (used on resets)
+function resetDragonMove() {
+  if (dragonMoveTimer) { clearTimeout(dragonMoveTimer); dragonMoveTimer = null; }
+  if (dragonMoveEnd && dragonEl) dragonEl.removeEventListener('transitionend', dragonMoveEnd);
+  dragonMoveEnd = null;
+  const wasMoving = dragonMoving;
+  dragonMoving = false;
+  return wasMoving;
+}
+// the dragon has landed → let the held line (and its box) appear
+function endDragonMove() { if (resetDragonMove()) pumpDialogue(); }
+// `reposition` is the class change that moves the dragon; everything around it is the polish
+function glideDragon(reposition) {
+  resetDragonMove();                                 // never two glides in flight
+  if (bannerEl) bannerEl.classList.remove('show');   // box stays down for the whole trip
+  unfreezeDragon();                                  // live image → the movement is visible
+  if (reposition) reposition();                      // start the CSS glide
+  if (!dragonEl) { pumpDialogue(); return; }
+  dragonMoving = true;
+  dragonMoveEnd = (e) => {
+    if (e.target !== dragonEl) return;
+    if (e.propertyName !== 'left' && e.propertyName !== 'top') return;
+    endDragonMove();                                 // arrived
+  };
+  dragonEl.addEventListener('transitionend', dragonMoveEnd);
+  // safety net: if the glide never runs (dragon already in place) or the event is missed,
+  // land anyway so the dialogue can never stay held shut
+  dragonMoveTimer = setTimeout(endDragonMove, DRAGON_MOVE_MS + 200);
 }
 
 // end of tutorial: the host dragon slides off to the right and is removed,
@@ -2354,17 +2406,29 @@ function leaveTitle() {
 // ── tutorial: dragon's welcome intro, then the first customer arrives ──
 function startTutorialIntro() {
   if (!tutorial) { walkInClient(); return; }
-  if (dragonEl)  dragonEl.classList.add('intro');     // dragon stands centre-stage for the welcome
-  if (bannerEl)  bannerEl.classList.add('introPos');  // bubble sits above the centred dragon
+  // glide out to centre stage first; the welcome box fades in once it has arrived
+  glideDragon(() => {
+    if (dragonEl)  dragonEl.classList.add('intro');     // dragon stands centre-stage for the welcome
+    if (bannerEl)  bannerEl.classList.add('introPos');  // bubble re-anchors above it (still hidden)
+  });
   typeBanner('Welcome to the Spooky Juice Stall!');
   typeBanner('The customers will be arriving soon!', null, walkInClient);   // ("thirsty" line removed)
 }
 
 // ── client walks in (right → left), then its order pops, then the guide ──
 function walkInClient() {
-  if (dragonEl)  dragonEl.classList.remove('intro');     // dragon moves to its corner
-  if (bannerEl)  bannerEl.classList.remove('introPos');  // bubble back to its normal spot
-  if (tutorial) typeBanner('Look! Our first customer.');
+  if (tutorial) {
+    // centre stage → resting spot on the right, as ONE uninterrupted glide. The dialogue box
+    // and the dragon's talk UI appear together only after it has landed (see glideDragon).
+    glideDragon(() => {
+      if (dragonEl)  dragonEl.classList.remove('intro');     // dragon moves to its corner
+      if (bannerEl)  bannerEl.classList.remove('introPos');  // bubble back to its normal spot
+    });
+    typeBanner('Look! Our first customer.');
+  } else {
+    if (dragonEl)  dragonEl.classList.remove('intro');     // (no dragon narration outside the tutorial)
+    if (bannerEl)  bannerEl.classList.remove('introPos');
+  }
   clientEl.classList.remove('arriving');
   void clientEl.offsetWidth;
   clientEl.classList.add('arriving');
