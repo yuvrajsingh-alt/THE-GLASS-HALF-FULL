@@ -1560,7 +1560,7 @@ const titleMusic = TITLE_MUSIC_SRC ? regAudio(TITLE_MUSIC_SRC) : null;
 if (titleMusic) { titleMusic.loop = TITLE_MUSIC_LOOP; titleMusic.volume = 0.85; }
 function playTitleMusic() {
   if (!titleMusic || titleDone) return;                       // game started (Play tapped) — stay off
-  try { titleMusic.currentTime = 0; titleMusic.play().catch(() => {}); } catch (e) {}
+  playTitleSting();                                           // same clip, same safe start
 }
 // The "Ready Set Serve!" sting, fired by the Play TAP itself.
 // Separate from playTitleMusic() for two reasons: that one bails out once titleDone is set,
@@ -1569,7 +1569,15 @@ function playTitleMusic() {
 // policy, and leaveTitle() then stopped it a few ms later, so it never actually played.
 function playTitleSting() {
   if (!titleMusic) return;
-  try { titleMusic.currentTime = 0; titleMusic.play().catch(() => {}); } catch (e) {}
+  // play() FIRST, and rewind separately. The element is preload='none' with a blob: src, so
+  // until it has loaded its readyState is HAVE_NOTHING and assigning currentTime throws
+  // InvalidStateError — which, when both sat in one try block, skipped play() entirely and
+  // the catch swallowed it. That is why no sound came out in a real browser.
+  try {
+    const p = titleMusic.play();
+    if (p && p.catch) p.catch(() => {});
+  } catch (e) {}
+  try { if (titleMusic.currentTime > 0.05) titleMusic.currentTime = 0; } catch (e) {}
 }
 function stopTitleMusic() {
   if (!titleMusic) return;
