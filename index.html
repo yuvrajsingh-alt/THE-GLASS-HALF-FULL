@@ -1680,6 +1680,7 @@ let voiceQueue   = [];
 let voiceBusy    = false;
 let currentVoice = null;
 let voiceFallback = null;
+let voiceAdvance = null;   // ends the line currently on screen (see finishCurrentLine)
 // ── dragon typewriter ────────────────────────────────────────
 // Reveal the line one character at a time, with a blinking caret and a soft
 // click per keystroke. The not-yet-typed tail is kept in the layout (invisible)
@@ -1855,6 +1856,7 @@ function pumpDialogue() {
   const advance = () => {
     if (advanced) return;
     advanced = true;
+    voiceAdvance = null;
     if (voiceFallback) { clearTimeout(voiceFallback); voiceFallback = null; }
     if (currentVoice) { try { currentVoice.onended = null; } catch (e) {} currentVoice = null; }
     dragonTalk(false);                      // stopped talking — freeze the dragon
@@ -1863,6 +1865,7 @@ function pumpDialogue() {
     voiceBusy = false;
     pumpDialogue();
   };
+  voiceAdvance = advance;                     // lets finishCurrentLine() end this line early
 
   if (clip) {                                 // (file/clip resolved at the top of this function)
     currentVoice = clip;
@@ -1884,6 +1887,16 @@ function pumpDialogue() {
   }
 }
 
+// The player has already DONE what the line on screen asked for, so the rest of its reading
+// hold is dead time holding the next instruction back. This ends it now: the line's onEnd
+// still runs and the queue moves on in order, so nothing is skipped. It refuses to act while
+// a recording is playing, so narration is never cut off mid-sentence — only the timed hold of
+// a silent prompt (like the box-less "Tap on the lemons.") is released early.
+function finishCurrentLine() {
+  if (currentVoice) return;                   // a voice clip is playing → let it finish
+  if (voiceAdvance) voiceAdvance();
+}
+
 // True while the dragon is mid-sentence OR still has lines queued behind it. Interactions
 // that are NOT the action the current line is asking for must be ignored until this clears,
 // so nothing the player taps can cut the narration short. Once the dragon has left there is
@@ -1898,6 +1911,7 @@ function clearVoiceQueue() {
   voiceBusy  = false;
   boxlessLine = false;
   stopTyping();                      // abort any in-progress typewriter reveal
+  voiceAdvance = null;
   if (gentleTimer) { clearTimeout(gentleTimer); gentleTimer = null; }   // drop a pending 0.3s beat
   resetDragonMove();                 // …and any dragon-move gate, so the queue is never held shut
   if (voiceFallback) { clearTimeout(voiceFallback); voiceFallback = null; }
@@ -2935,7 +2949,8 @@ function compositeAdd(which) {            // which = 'straw' | 'lemon'
   if (both) {
     // second ingredient in → ready to drag to the customer ("Juice is ready!" line removed)
     if (tutorial) {
-      setTimeout(enableServeDrag, 600);   // brief beat after the lemon lands, then the drag guide
+      setTimeout(enableServeDrag, 150);   // the drag guide comes up right as the lemon lands
+                                          // (was 600ms — too long a wait after the tap)
     } else {
       enableServeDrag();
     }
@@ -2977,6 +2992,10 @@ function addLemonToServed() {
   if (tutorial && !strawAdded) return;   // tutorial forces straw-first (guided); solo allows either box first
   lemonAdded = true;
   cancelBoxIdleNudge();             // player acted — drop any pending idle nudge
+  // "Tap on the lemons." has just been obeyed, and it is a silent prompt sitting out a ~3.2s
+  // reading hold. Release it the moment the box is tapped so "Drag the juice to the customer."
+  // comes up straight away instead of waiting for a prompt the player has already answered.
+  if (tutorial) finishCurrentLine();
   hideHand();                       // lemon tapped — clear the lemon-box hand cue
   lemonBox.classList.remove('glow');
   lemonBox.style.pointerEvents = 'none';
