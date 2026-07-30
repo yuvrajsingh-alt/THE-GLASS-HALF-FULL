@@ -4674,5 +4674,30 @@ initRound();
     document.body.appendChild(dbg);
   }
 </script>
+<script>
+window.__T = [];
+window.addEventListener('error', e => __T.push('JSERROR: ' + e.message));
+function T(name, fn) { try { fn(); __T.push(name + ':ok'); } catch (e) { __T.push(name + ':ERR ' + e.message); } }
+setTimeout(function () {
+  const ps = document.getElementById('pauseScreen'), gc = document.getElementById('gc');
+  T('leaveTitle', function () { assetsReady = true; leaveTitle(); });
+  __T.push('titleDone=' + titleDone, 'pendingTimers=' + heldTimers.size);
+  T('pauseGame', function () { pauseGame(); });
+  __T.push('paused=' + gamePaused, 'timersHeld=' + timersHeld,
+           'overlay=[' + ps.className + ']', 'gc=[' + gc.className + ']',
+           'armedTimers=' + Array.from(heldTimers.values()).filter(r => r.handle).length,
+           'heldAudio=' + audioHeld.length);
+  T('pumpWhilePaused', function () { pumpDialogue(); });
+  T('resumeGame', function () { resumeGame(); });
+  __T.push('afterResume paused=' + gamePaused, 'timersHeld=' + timersHeld,
+           'overlay=[' + ps.className + ']', 'gc=[' + gc.className + ']',
+           'armedTimers=' + Array.from(heldTimers.values()).filter(r => r.handle).length);
+  T('doublePause', function () { pauseGame(); pauseGame(); resumeGame(); resumeGame(); });
+  __T.push('final paused=' + gamePaused + ' timersHeld=' + timersHeld);
+  const d = document.createElement('div'); d.id = 'TESTOUT';
+  d.textContent = __T.join(' | ');
+  document.body.appendChild(d);
+}, 2500);
+</script>
 </body>
 </html>
