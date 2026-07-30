@@ -2722,6 +2722,35 @@ function setJuice(pct) {
 // ── on a correct answer: clone the filled glass into a draggable set on the tray ──
 let servedSet = null;
 
+// ── tray placement gate ───────────────────────────────────────
+// The served drink glides from where it was dropped to its resting spot on the tray (the
+// .servedSet left/top transition). Nothing may be announced while that is still running:
+// onTrayPlaced() holds a callback until the drink is completely at rest. In the normal flow
+// the glide is already over by the time these callbacks are due, so the tutorial's pacing is
+// unchanged — this only guarantees the order if a frame hitches or a tap comes early.
+const TRAY_PLACE_MS = 850;          // keep in sync with the .servedSet left/top transition
+let trayPlacing = false, trayPlaceTimer = null, trayPlaceEnd = null, trayPlaceCbs = [];
+function onTrayPlaced(cb) {
+  if (!trayPlacing) { cb(); return; }        // already at rest → run now
+  trayPlaceCbs.push(cb);
+}
+// clear the gate without running anything (round reset — the drink is gone)
+function resetTrayPlace() {
+  if (trayPlaceTimer) { clearTimeout(trayPlaceTimer); trayPlaceTimer = null; }
+  trayPlaceEnd = null;
+  trayPlacing = false;
+  trayPlaceCbs = [];
+}
+// the drink has settled on the tray → release everything waiting on it
+function trayPlaced() {
+  if (trayPlaceTimer) { clearTimeout(trayPlaceTimer); trayPlaceTimer = null; }
+  trayPlaceEnd = null;
+  if (!trayPlacing) return;
+  trayPlacing = false;
+  const cbs = trayPlaceCbs; trayPlaceCbs = [];
+  cbs.forEach(cb => { try { cb(); } catch (e) {} });
+}
+
 function serveToTray(startLeft, startTop) {
   glassEl.classList.remove('glow');   // glass is leaving for the tray — stop the highlight (and don't clone it)
   const set = document.createElement('div');
@@ -2771,7 +2800,18 @@ function serveToTray(startLeft, startTop) {
   pourBtn.disabled = true;
   cancelPourNudge();                 // don't nudge a button the player can't use
 
-  // fly it onto the tray on the next frame so the transition runs
+  // fly it onto the tray on the next frame so the transition runs. Until it has finished
+  // travelling the drink counts as "still being placed" — see onTrayPlaced.
+  resetTrayPlace();
+  trayPlacing = true;
+  trayPlaceEnd = (e) => {
+    if (e.target !== set) return;
+    if (e.propertyName !== 'left' && e.propertyName !== 'top') return;
+    trayPlaced();                                   // landed on the tray
+  };
+  set.addEventListener('transitionend', trayPlaceEnd);
+  // safety net: if the glide never runs or the event is missed, treat it as placed anyway
+  trayPlaceTimer = setTimeout(trayPlaced, TRAY_PLACE_MS + 250);
   requestAnimationFrame(() => requestAnimationFrame(() => {
     set.style.left = '58.5%';
     set.style.top  = '73%';
@@ -2779,9 +2819,10 @@ function serveToTray(startLeft, startTop) {
 
   // (the reward star burst now fires on the machine glass at Check time — see onSuccess/checkPair)
 
-  // once it has landed, invite the player to add a straw
+  // once it has landed, invite the player to add a straw (onTrayPlaced keeps the prompt from
+  // ever landing on the tail of the glide — the 950ms beat itself is unchanged)
   strawAdded = false; lemonAdded = false;
-  setTimeout(() => {
+  setTimeout(() => onTrayPlaced(() => {
     if (tutorial) {
       // tutorial: guided — straw first
       typeBanner('Tap on the straws.', () => {
@@ -2795,7 +2836,7 @@ function serveToTray(startLeft, startTop) {
       lemonBox.style.pointerEvents = 'auto';
       armBoxIdleNudge();   // idle ~9s with no tap → glow + hand nudge on the straw box first
     }
-  }, 950);
+  }), 950);
 }
 
 // player clicked the glowing straw box → drop a straw into the served glass,
@@ -2952,6 +2993,7 @@ function addLemonToServed() {
 function clearServed() {
   cancelDragIdleNudge();
   cancelBoxIdleNudge();
+  resetTrayPlace();                 // the drink is gone — drop any pending placement gate
   if (servedSet) { servedSet.remove(); servedSet = null; }
   strawBox.classList.remove('glow'); strawBox.style.pointerEvents = 'none';
   lemonBox.classList.remove('glow'); lemonBox.style.pointerEvents = 'none';
@@ -3132,6 +3174,10 @@ glassEl.addEventListener('pointerdown', onGlassDown);
 
 function enableServeDrag() {
   if (!servedSet) return;
+  // The drink must be COMPLETELY at rest on the tray before its instruction appears. In the
+  // normal tutorial flow the glide finished long ago (the straw and lemon steps happen in
+  // between), so this changes nothing — it just makes the order impossible to get wrong.
+  if (trayPlacing) { onTrayPlaced(enableServeDrag); return; }
   wrongDropCount = 0;                                        // fresh drink → reset the wrong-drop hint counter
   servedSet.addEventListener('pointerdown', onServeDown);   // armed, but inert until 'draggable' is set
   if (tutorial) {
