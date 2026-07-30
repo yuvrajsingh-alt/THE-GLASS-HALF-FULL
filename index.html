@@ -1770,9 +1770,10 @@ function enqueueDialogue(text, onDone, onEnd) {
 }
 
 function pumpDialogue() {
+  refreshGlassGrab();                       // dialogue state changed → re-gate the glass
   if (voiceBusy) return;                    // a line is still narrating — wait for it
   const item = voiceQueue.shift();
-  if (!item) return;
+  if (!item) { refreshGlassGrab(); return; }  // queue drained → the glass may unlock
   voiceBusy = true;
 
   // resolve the narration first, so the typewriter can pace itself to the clip's length
@@ -1840,6 +1841,14 @@ function pumpDialogue() {
   }
 }
 
+// True while the dragon is mid-sentence OR still has lines queued behind it. Interactions
+// that are NOT the action the current line is asking for must be ignored until this clears,
+// so nothing the player taps can cut the narration short. Once the dragon has left there is
+// no narration to protect, so nothing blocks (pair mode runs lines silently).
+function dialogueBlocking() {
+  return !dragonGone && (voiceBusy || voiceQueue.length > 0);
+}
+
 // drop any pending/playing narration (used on round reset)
 function clearVoiceQueue() {
   voiceQueue = [];
@@ -1852,6 +1861,7 @@ function clearVoiceQueue() {
     currentVoice = null;
   }
   dragonTalk(false);                 // stopped talking — freeze the dragon
+  refreshGlassGrab();                // nothing narrating any more → the glass may unlock
 }
 
 // ── dragon animation: the GIF only plays while the dragon is speaking ──
@@ -2481,7 +2491,8 @@ function pour() {
   if (tutorial && fillPct >= 100) {
     pourBtn.disabled = true;             // glass full — no more pouring
     setTimeout(() => { if (phase === 'play') typeBanner('Drag the glass to the tray.',
-      () => { glassEl.classList.remove('glow'); enableGlassDrag(); hideHand(); showGlassGhost(); }); }, 1100);   // cue: ghost glass drifts to the glowing tray
+      () => { glassEl.classList.remove('glow'); enableGlassDrag(true); hideHand(); showGlassGhost(); }); }, 1100);   // cue: ghost glass drifts to the glowing tray
+                                              // (true → the drag IS this line's step, so it stays live while it speaks)
   }
 }
 
@@ -2494,7 +2505,9 @@ function afterPour(r) {
     // the 50% (half-full) beat is handled in pour() before afterPour runs
     if (fillPct >= 100)      typeBanner('The glass is now full.', () => {
       if (cueVisible()) glassEl.classList.add('glow');
-      enableGlassDrag();                  // glass becomes draggable exactly as the dragon says it's full
+      enableGlassDrag();                  // armed here, but INERT until the queue drains / the
+                                          // "Drag the glass to the tray." line takes over — a grab
+                                          // during this line must not swallow that instruction
     });  // full → no re-enable
     else if (fillPct >= 75)  typeBanner('Tap again!', null, enablePour);
     else                     typeBanner('Keep pouring!', null, enablePour);
@@ -2503,7 +2516,8 @@ function afterPour(r) {
   if (pairMode) return;   // two-client mode: no narration (dragon is gone); just pour freely
   // ── normal single-client rounds ──
   // reaching the target → cue the drop: ghost glass drifts to the glowing tray (no hand)
-  const trayCue = () => { hideHand(); showGlassGhost(); };
+  // these lines ASK for the drag, so the drag is live while they narrate
+  const trayCue = () => { hideHand(); showGlassGhost(); enableGlassDrag(true); };
   if (r.target === 'full') {
     if (fillPct >= FULL_MIN)            typeBanner('Drag the glass to the tray.', trayCue);
     else if (fillPct >= 48 && fillPct <= 52) typeBanner('The glass is now half full.');
@@ -2852,6 +2866,8 @@ let dragActive = false, dragStartX = 0, dragStartY = 0;
 // Dropping it on the tray validates the fill: right order → it settles onto the tray and
 // the straw/lemon step begins; wrong order → it glides back with a "try again" shake.
 let glassDraggable = false, glassDragActive = false, glassDragSX = 0, glassDragSY = 0;
+// true only when the line currently speaking is the one asking for the drag (see enableGlassDrag)
+let glassDragIsTheStep = false;
 
 // hide the pour glass while a drink is out being served; re-show it (a fresh glass drops
 // into the slot) exactly when the reward coins vanish — see rewardCoins.
@@ -2901,12 +2917,30 @@ function hideGlassGhost() {
   if (trayEl) trayEl.classList.remove('glow');
 }
 
-function enableGlassDrag()  { glassDraggable = true;  glassEl.classList.add('grabbable'); }
+// `isTheStep = true` means dragging is the action the CURRENT dialogue line is asking for
+// ("Drag the glass to the tray."), so the drag stays live while that line narrates. Called
+// without it (e.g. from "The glass is now full."), the glass is armed but stays inert until
+// the whole dialogue sequence has finished — a grab must never skip the remaining lines.
+function enableGlassDrag(isTheStep) {
+  glassDraggable = true;
+  if (isTheStep) glassDragIsTheStep = true;
+  refreshGlassGrab();
+}
 function disableGlassDrag() {
-  glassDraggable = false; glassDragActive = false;
+  glassDraggable = false; glassDragActive = false; glassDragIsTheStep = false;
   glassEl.classList.remove('grabbable', 'dragging');
   glassEl.style.transition = ''; glassEl.style.transform = '';
   hideGlassGhost();                   // no drag → no ghost cue / tray glow
+}
+// May the glass be grabbed right now? `.grabbable` is what gives it pointer-events, so
+// toggling the class both gates the tap and keeps the cursor honest about it.
+function glassGrabAllowed() {
+  return glassDraggable && (glassDragIsTheStep || !dialogueBlocking());
+}
+function refreshGlassGrab() {
+  if (!glassEl) return;
+  if (glassDragActive) return;                 // mid-drag — never yank it out of the player's hand
+  glassEl.classList.toggle('grabbable', glassGrabAllowed());
 }
 // glide the machine glass back to its home spot, then run `then` (used by the wrong-drop shake)
 function snapGlassHome(then) {
@@ -2920,14 +2954,19 @@ function snapGlassHome(then) {
 }
 function onGlassDown(e) {
   if (!glassDraggable || !hasPoured || phase !== 'play') return;
+  // The dragon is still talking (or has lines queued) and this drag is not what it asked for
+  // → ignore the grab completely. It must not skip, cut short, or reorder the narration.
+  // Repeated / rapid taps all land here, so no amount of clicking gets past the sequence.
+  if (!glassGrabAllowed()) { refreshGlassGrab(); return; }
   e.preventDefault();
   glassDragActive = true;
   glassEl.classList.add('dragging');    // lift above the tray/boxes for the whole drag
   hideHand();
   hideGlassGhost();                     // player grabbed it — drop the ghost cue + tray glow
   cancelPourNudge();
-  clearVoiceQueue();
-  if (bannerEl) bannerEl.classList.remove('show');
+  // NOTE: the narration is deliberately NOT cleared here. Grabbing the glass used to call
+  // clearVoiceQueue(), which threw away every remaining line (and its onEnd callbacks) — that
+  // was the dialogue-skipping bug. The line finishes on its own while the drag happens.
   glassEl.classList.remove('glow');
   glassEl.style.transition = 'none';
   glassDragSX = e.clientX; glassDragSY = e.clientY;
