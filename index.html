@@ -699,14 +699,17 @@ body {
   animation: none;
 }
 /* Disabled POUR (glass already full, or locked while the dragon speaks). The ready-glow
-   animation above only runs on :not(:disabled), so it stops here; this makes the button
-   clearly read as "not tappable" — the old grayscale(0.4) was too subtle to notice. */
+   animation above only runs on :not(:disabled), so it stops here.
+   Kept CRISP: there is no blur and no transform. The old scale(0.96) was the real culprit —
+   a fractional downscale resamples the bitmap artwork, which softened the POUR text, the
+   outline and the highlights; heavy brightness(0.62) + opacity 0.55 washed out what was
+   left. "Not tappable" now reads from a light desaturation/dim plus 85% opacity, so every
+   edge stays at its native size and full sharpness. */
 #pourBtn:disabled {
   cursor: default;
   pointer-events: none;                /* no hover/active feedback either */
-  filter: grayscale(0.85) brightness(0.62) contrast(0.9);
-  opacity: 0.55;
-  transform: scale(0.96);
+  filter: saturate(0.8) brightness(0.9);
+  opacity: 0.85;
 }
 /* pointer-driven game buttons: no browser focus ring — shift+click / keyboard-style
    activation otherwise draws a rectangle around the button's (invisible) box */
