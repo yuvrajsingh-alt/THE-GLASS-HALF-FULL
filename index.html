@@ -3167,7 +3167,21 @@ let glassDragIsTheStep = false;
 // hide the pour glass while a drink is out being served; re-show it (a fresh glass drops
 // into the slot) exactly when the reward coins vanish — see rewardCoins.
 function hideMachineGlass() { hideGlassGhost(); glassEl.classList.remove('appearIn'); glassEl.classList.add('gone'); }
+// Has the LAST customer been served? Nobody left waiting and nobody left to spawn. From that
+// point the cycle is on its way into the completion sequence, so the machine must not prepare
+// another glass — it would just sit unused under the spout while the end screen comes up.
+// Only ever true in customer (pair) mode: the tutorial and the solo rounds always have a next
+// customer, so their fresh-glass behaviour is untouched.
+function noCustomersLeft() {
+  if (phase === 'gameover') return true;                 // completion flow already started
+  if (!pairMode) return false;
+  if (qIndex < customerOrder.length) return false;       // more are still due to arrive
+  // The customer being served holds their lane until they have walked off, so "only the one
+  // mid-delivery is left" also counts as the last one.
+  return queue.length === 0 || (queue.length === 1 && phase === 'leaving');
+}
 function showMachineGlass() {
+  if (noCustomersLeft()) return;            // final customer served → no new glass, no pop-in
   glassEl.classList.remove('gone', 'appearIn');
   void glassEl.offsetWidth;                 // restart the pop-in animation
   glassEl.classList.add('appearIn');
