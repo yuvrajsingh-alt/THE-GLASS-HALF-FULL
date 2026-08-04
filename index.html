@@ -1055,45 +1055,6 @@ body {
   will-change: transform, opacity;
 }
 
-/* ════ DEV screen switcher — TEMPORARY, remove before release ════ */
-#devMenu { position: fixed; top: 8px; left: 8px; z-index: 99999; font-family: system-ui, sans-serif; }
-#devToggle {
-  width: 40px; height: 40px; font-size: 20px; line-height: 1; cursor: pointer;
-  background: rgba(0,0,0,0.72); color: #fff; border: 1px solid #999; border-radius: 8px;
-}
-#devToggle:hover { background: rgba(0,0,0,0.9); }
-#devList {
-  display: none; margin-top: 6px; background: rgba(18,8,28,0.97);
-  border: 1px solid #999; border-radius: 8px; padding: 6px; min-width: 200px;
-  box-shadow: 0 6px 20px rgba(0,0,0,0.5);
-}
-#devList.open { display: block; }
-#devList button {
-  display: block; width: 100%; text-align: left; margin: 2px 0; padding: 7px 10px;
-  background: #2a1838; color: #fff; border: none; border-radius: 6px; cursor: pointer;
-  font: 600 13px system-ui, sans-serif;
-}
-#devList button:hover { background: #ffd700; color: #1a1a1a; }
-/* skip-dialogue toggle (green when ON) */
-#devList button.on { background: #2e7d32; color: #fff; }
-#devList button.on:hover { background: #388e3c; color: #fff; }
-/* per-round collapsible submenu */
-#devList .devGroup { margin: 2px 0; }
-#devList .devGroup .devSub {
-  display: none;
-  margin: 2px 0 6px 8px;
-  padding-left: 8px;
-  border-left: 2px solid #4a2d63;
-}
-#devList .devGroup.open .devSub { display: block; }
-#devList .devSub button { font-size: 12px; padding: 5px 9px; background: #9361c9; }
-/* small section heading inside a submenu (e.g. "Half-glass order") */
-#devList .devLabel {
-  margin: 7px 0 2px; padding: 0 2px;
-  font: 700 10px system-ui, sans-serif; letter-spacing: 0.6px;
-  color: #b9a3d0; text-transform: uppercase;
-}
-/* ════ end DEV screen switcher ════ */
 
 </style>
 </head>
@@ -1335,12 +1296,6 @@ body {
 
 </div>
 
-<!-- ════ DEV screen switcher — TEMPORARY, remove before release ════ -->
-<div id="devMenu">
-  <button id="devToggle" onclick="toggleDevMenu()" title="Dev: jump to screen">☰</button>
-  <div id="devList"></div>
-</div>
-<!-- ════ end DEV screen switcher ════ -->
 
 <script>
 // ── pausable timers ───────────────────────────────────────────
@@ -4220,19 +4175,11 @@ window.__GAME = {
   }
 };
 
-// ════ DEV screen switcher — TEMPORARY, remove before release ════
-function toggleDevMenu() {
-  const l = document.getElementById('devList');
-  if (l) l.classList.toggle('open');
-}
-// tap/click anywhere outside the menu → close it
-document.addEventListener('pointerdown', (e) => {
-  const menu = document.getElementById('devMenu');
-  const l = document.getElementById('devList');
-  if (l && l.classList.contains('open') && menu && !menu.contains(e.target)) {
-    l.classList.remove('open');
-  }
-});
+// ── test hooks (no UI) ────────────────────────────────────────
+// The on-screen dev menu (the ☰ button, its list and its CSS) has been removed. These jump
+// functions are kept because they are the only way to land on a specific game state without
+// playing through it — call them from the console, e.g. devPairJump('full', 'serve', true)
+// for the last customer, devSetupScene(2), devGoToEnd(). Nothing in the game calls them.
 function devResetScene() {
   stopTitleSting();          // any dev jump leaves the title → the VO must not linger
   clearVoiceQueue();
@@ -4489,80 +4436,6 @@ function devPairJump(target, step, lastVisit) {
   }
 }
 
-// Menu mirrors the CURRENT game flow: title → tutorial (ghost + dragon) →
-// customer mode (5 customers × half-then-full orders, up to 3 in line) → end.
-function buildDevMenu() {
-  const list = document.getElementById('devList');
-  if (!list) return;
-  list.innerHTML = '';
-  const close = () => list.classList.remove('open');
-  const addBtn = (parent, label, fn, cls) => {
-    const b = document.createElement('button');
-    b.textContent = label;
-    if (cls) b.className = cls;
-    b.onclick = (e) => { e.stopPropagation(); fn(); };
-    parent.appendChild(b);
-    return b;
-  };
-  const addLabel = (parent, text) => {
-    const d = document.createElement('div');
-    d.className = 'devLabel';
-    d.textContent = text;
-    parent.appendChild(d);
-  };
-  const addGroup = (title) => {
-    const group = document.createElement('div');
-    group.className = 'devGroup';
-    addBtn(group, title + '  ▸', () => group.classList.toggle('open'), 'devHead');
-    const sub = document.createElement('div');
-    sub.className = 'devSub';
-    group.appendChild(sub);
-    list.appendChild(group);
-    return sub;
-  };
-
-  addBtn(list, '🏠 Title screen', () => { devGoToTitle(); close(); });
-
-  // ── tutorial (the ghost round with the dragon host) ──
-  const tut = addGroup('🎓 Tutorial — ghost (FULL)');
-  addBtn(tut, '↪ Play from start',        () => { devGoToRound(0); close(); });
-  addBtn(tut, '① Empty glass — pour',     () => { devToPour(0);    close(); });
-  addBtn(tut, '② Filled — Check',         () => { devToCheck(0);   close(); });
-  addBtn(tut, '③ On tray — straw/lemon',  () => { devToTray(0);    close(); });
-  addBtn(tut, '④ Ready to serve (drag)',  () => { devToServe(0);   close(); });
-
-  // ── customer mode (the main game after the tutorial) ──
-  const cm = addGroup('👥 Customer mode (main game)');
-  addBtn(cm, '↪ Play from start', () => {
-    devResetScene();
-    titleDone = true;
-    const t = document.getElementById('title'); if (t) t.style.display = 'none';
-    if (dragonEl) dragonEl.style.display = 'none';
-    enterPairMode();
-    close();
-  });
-  [['half', 'Half-glass order'], ['full', 'Full-glass order']].forEach(([target, label]) => {
-    addLabel(cm, label);
-    addBtn(cm, '① Empty glass — pour',    () => { devPairJump(target, 'pour');  close(); });
-    addBtn(cm, '② Filled — Check',        () => { devPairJump(target, 'check'); close(); });
-    addBtn(cm, '③ On tray — straw/lemon', () => { devPairJump(target, 'tray');  close(); });
-    addBtn(cm, '④ Ready to serve (drag)', () => { devPairJump(target, 'serve'); close(); });
-  });
-  addLabel(cm, 'Cycle end');
-  addBtn(cm, '🏁 Last order — serve it → end screen', () => { devPairJump('full', 'serve', true); close(); });
-
-  addBtn(list, '🏁 End screen', () => { devGoToEnd(); close(); });
-
-  const skipBtn = addBtn(list, '', () => {});
-  const paintSkip = () => {
-    skipBtn.textContent = '⚡ Skip dialogue: ' + (skipDialogue ? 'ON' : 'OFF');
-    skipBtn.classList.toggle('on', skipDialogue);
-  };
-  skipBtn.onclick = (e) => { e.stopPropagation(); skipDialogue = !skipDialogue; paintSkip(); };
-  paintSkip();
-}
-buildDevMenu();
-// ════ end DEV screen switcher ════
 
 // ── boot ──────────────────────────────────────────────────────
 // ==== boot preloader ==========================================
