@@ -268,24 +268,14 @@ body {
 #dragonText b { font-weight: 800; }
 
 /* ── thought bubble (the client's order) — uses dailoge box.svg ── */
-/* ── how high the order bubbles sit ─────────────────────────────
-   The box is 17.57% of the board tall (7.27% of the width × 281/382), and it hangs in the
-   band from −9.50% to −2.23% of the board width beside its customer — so its bottom-right
-   corner, tail included, passes right where a head is. Measured, per sprite, the height at
-   which each silhouette first enters that band (object-fit: contain inside the 12.8%×40%
-   customer box, so each sprite lands differently):
-       vampire 22.15% · wolf 22.87% · goblin 23.82% · mummy 24.51% · skeleton 26.27% · ghost 27.58%
-   At the old top of 9.5% the box ended at 27.07%, which cut into five of the six — up to
-   4.92% into the vampire. Only the tutorial ghost cleared it, which is why the tutorial
-   looked right and the customer line did not.
-   2.60% puts the bottom edge at 20.17%: a ~2% gap above even the tallest head. The idle
-   clientFloat lifts a customer by 1% of the board at most, so the gap never closes to
-   nothing, and the bubble's own float only ever adds to it. Every lane keeps the SAME top,
-   so the boxes still line up with each other exactly as before. */
+/* How high a box sits is set in JS, per character, because every sprite's head lands at a
+   different height inside the shared customer box — see BUBBLE_TOP / setBubbleTop(). The
+   value here is only the fallback for a skin that isn't in that table: the tightest of the
+   measured tops, so it can never overlap anyone. */
 #thought {
   position: absolute;
   left: 45.5%;                /* TUTORIAL position (customer mode overrides this via QUEUE_POS inline styles) */
-  top: 2.6%;                  /* clears the tallest customer's head by ~2% — see the note above */
+  top: 3.1%;                  /* fallback only — setBubbleTop() sets the real value per skin */
   width: 7.27%;
   aspect-ratio: 281 / 382;
   display: none;
@@ -328,7 +318,7 @@ body {
 #thought2, #thought3 {
   position: absolute;
   left: 63%;                  /* overridden per-lane by QUEUE_POS in customer mode */
-  top: 2.6%;                  /* same as #thought → all dialogue boxes sit at one height */
+  top: 3.1%;                  /* fallback only — setBubbleTop() sets the real value per skin */
   width: 7.27%;
   aspect-ratio: 281 / 382;
   display: none;
@@ -1593,15 +1583,38 @@ const LANES = [
 // the tutorial customer is centred at 55% with its box at left 45.5% (a −9.5% offset), so each
 // lane's box sits −9.5% from that lane's centre. No per-character variation → uniform boxes.
 const BUBBLE_OFFSET = -9.5;
+// ── how high each customer's order box sits ───────────────────
+// Every sprite is scaled with object-fit: contain inside ONE 12.8%×40% customer box, so each
+// character's head lands at a different height. A single shared top therefore either cuts into
+// the tall ones or floats miles above the short ones — which is what happened: 9.5% overlapped
+// five of six heads, and the 2.6% that fixed that left the short characters' boxes stranded
+// near the top of the board.
+// These are measured: for each character, the LOWEST top at which the box art — tail included,
+// alpha-tested against both box variants — still clears that customer's silhouette, minus the
+// 1% board lift of the idle clientFloat, minus 1% of margin. So every box now sits the same
+// small distance above its OWN customer's head (~2% at rest, ~1% at the top of the float).
+//   measured touch points: ghost 9.52 · skeleton 8.09 · mummy 6.36 · wolf 5.52 · goblin 5.34 · vampire 4.13
+const BUBBLE_TOP = {
+  ghost:    '8.5%',
+  skeleton: '7.1%',
+  mummy:    '5.4%',
+  wolf:     '4.5%',
+  goblin:   '4.3%',
+  vampire:  '3.1%'
+};
+const BUBBLE_TOP_FALLBACK = '3.1%';   // unknown skin → the tightest value, so it can never overlap
+function setBubbleTop(b, skin) {
+  if (b) b.style.top = BUBBLE_TOP[skin] || BUBBLE_TOP_FALLBACK;
+}
 const QUEUE_POS = [
   { left:'50%', bubbleLeft:'40.5%' },   // 0 = front (centre) — 50 − 9.5
   { left:'67%', bubbleLeft:'57.5%' },   // 1 = second         — 67 − 9.5
   { left:'84%', bubbleLeft:'74.5%' }    // 2 = third          — 84 − 9.5
 ];
 // position a bubble at the standard offset for its lane (identical rule for every character)
-function placeBubble(b, pos /*, skin */) {
+function placeBubble(b, pos, skin) {
   b.style.left = pos.bubbleLeft;
-  b.style.top  = '';   // fall back to the shared CSS top (2.6%) — same for every box
+  setBubbleTop(b, skin);   // height comes from the customer's own head — see BUBBLE_TOP
 }
 const MAX_CUSTOMERS = 3;    // never more than three in line at once
 let pairMode = false;       // true once the tutorial is over (timed-spawn customer mode)
@@ -2600,6 +2613,7 @@ function walkInClient() {
 
 function showThought() {
   const r = ROUNDS[level];
+  setBubbleTop(thoughtEl, r.skin);   // tutorial + solo rounds: sit just above THIS character's head
   thoughtEl.classList.add('show');
   popSound();                       // thought bubble pops
   if (tutorial) {
@@ -4158,6 +4172,7 @@ window.__GAME = {
     if (r.skin) clientEl.classList.add(r.skin);
     clientEl.src = r.client;
     clientEl.style.opacity = '1';
+    setBubbleTop(thoughtEl, r.skin);
     thoughtEl.classList.add('show');
     bannerTxt.textContent = r.ask || r.label;
     bannerEl.classList.add('show');
@@ -4275,6 +4290,7 @@ function devSetupScene(n) {
   if (thoughtBg) thoughtBg.src = (r.target === 'half')
     ? 'new assets/dailoge box for half glass.webp'
     : 'new assets/dailoge box.webp';
+  setBubbleTop(thoughtEl, r.skin);
   thoughtEl.classList.add('show');
 }
 
