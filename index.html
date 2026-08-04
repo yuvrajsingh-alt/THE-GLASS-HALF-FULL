@@ -268,10 +268,24 @@ body {
 #dragonText b { font-weight: 800; }
 
 /* ── thought bubble (the client's order) — uses dailoge box.svg ── */
+/* ── how high the order bubbles sit ─────────────────────────────
+   The box is 17.57% of the board tall (7.27% of the width × 281/382), and it hangs in the
+   band from −9.50% to −2.23% of the board width beside its customer — so its bottom-right
+   corner, tail included, passes right where a head is. Measured, per sprite, the height at
+   which each silhouette first enters that band (object-fit: contain inside the 12.8%×40%
+   customer box, so each sprite lands differently):
+       vampire 22.15% · wolf 22.87% · goblin 23.82% · mummy 24.51% · skeleton 26.27% · ghost 27.58%
+   At the old top of 9.5% the box ended at 27.07%, which cut into five of the six — up to
+   4.92% into the vampire. Only the tutorial ghost cleared it, which is why the tutorial
+   looked right and the customer line did not.
+   2.60% puts the bottom edge at 20.17%: a ~2% gap above even the tallest head. The idle
+   clientFloat lifts a customer by 1% of the board at most, so the gap never closes to
+   nothing, and the bubble's own float only ever adds to it. Every lane keeps the SAME top,
+   so the boxes still line up with each other exactly as before. */
 #thought {
   position: absolute;
   left: 45.5%;                /* TUTORIAL position (customer mode overrides this via QUEUE_POS inline styles) */
-  top: 9.5%;                  /* floats just above the customer's head — close, but no overlap with the face */
+  top: 2.6%;                  /* clears the tallest customer's head by ~2% — see the note above */
   width: 7.27%;
   aspect-ratio: 281 / 382;
   display: none;
@@ -314,7 +328,7 @@ body {
 #thought2, #thought3 {
   position: absolute;
   left: 63%;                  /* overridden per-lane by QUEUE_POS in customer mode */
-  top: 9.5%;                  /* same as #thought → all dialogue boxes sit at one height */
+  top: 2.6%;                  /* same as #thought → all dialogue boxes sit at one height */
   width: 7.27%;
   aspect-ratio: 281 / 382;
   display: none;
@@ -1587,7 +1601,7 @@ const QUEUE_POS = [
 // position a bubble at the standard offset for its lane (identical rule for every character)
 function placeBubble(b, pos /*, skin */) {
   b.style.left = pos.bubbleLeft;
-  b.style.top  = '';   // fall back to the shared CSS top (9.5%) — same for every box
+  b.style.top  = '';   // fall back to the shared CSS top (2.6%) — same for every box
 }
 const MAX_CUSTOMERS = 3;    // never more than three in line at once
 let pairMode = false;       // true once the tutorial is over (timed-spawn customer mode)
