@@ -1708,7 +1708,8 @@ const bonusSound = regAudio('sxf/gamebonus.ogg');
 bonusSound.volume = 0.25;             // 25% volume
 // coin/cash-register sound — plays when the coin pile APPEARS on the counter (see rewardCoins)
 const serveSound = regAudio('sxf/cash-register..ogg');
-serveSound.volume = 0.5;             // 50% quieter
+const COIN_SFX_VOL = 0.5;            // 50% quieter
+serveSound.volume = COIN_SFX_VOL;
 // sound when the drink is dragged & dropped onto (delivered to) a customer
 const coinsGoneSound = regAudio('sxf/coins disappers.ogg');
 
@@ -3895,6 +3896,48 @@ function discardDrinkAndRepour() {
   }, 600);
 }
 
+// ── coin reward timeline ──────────────────────────────────────
+// The visual and the sound are driven off these three numbers, so they cannot drift apart.
+// HOLD/FADE must match the CSS: #coinPile.landIn is coinLand 0.45s, .fadeOut is coinFade 0.7s.
+const COIN = {
+  HOLD: 900,      // pile sits on the counter once it has materialised
+  FADE: 700,      // coinFade: floats up and dissolves — invisible at HOLD + FADE
+  LEAD_IN: 0.25   // measured dead air at the top of cash-register..ogg
+};
+// The cash-register chink, fitted to that timeline:
+//  • the file opens with 0.25s of digital silence. Skipping it puts the chink on the frame the
+//    coins materialise, instead of a quarter second after them.
+//  • the volume then rides the pile's dissolve: the fade starts the moment coinFade does and
+//    reaches silence exactly as the pile goes invisible, so the tail disappears WITH the coins.
+//  • at that point it is stopped and rewound. The file runs 2.23s and is still audible at
+//    2.03s, so played straight through it carried on ~0.4s after the coins had gone.
+// Ticks are counted rather than clock-timed, so a pause mid-fade resumes where it left off
+// instead of jumping to silence.
+function playCoinSfx() {
+  const s = serveSound;
+  if (!s) return;
+  if (s._fade) { clearInterval(s._fade); s._fade = null; }   // a second reward restarts cleanly
+  if (s._stop) { clearTimeout(s._stop); s._stop = null; }
+  try {
+    s.volume = COIN_SFX_VOL;
+    s.currentTime = COIN.LEAD_IN;
+    s.play().catch(() => {});
+  } catch (e) { return; }
+  const STEP = 40, steps = Math.max(1, Math.round(COIN.FADE / STEP));
+  s._stop = setTimeout(() => {                               // pile starts dissolving → fade out
+    let i = 0;
+    s._fade = setInterval(() => {
+      i++;
+      s.volume = Math.max(0, COIN_SFX_VOL * (1 - i / steps));
+      if (i >= steps) {                                      // pile is invisible → silence, fully
+        clearInterval(s._fade); s._fade = null;
+        try { s.pause(); s.currentTime = COIN.LEAD_IN; } catch (e) {}
+        s.volume = COIN_SFX_VOL;                             // armed for the next reward
+      }
+    }, STEP);
+  }, COIN.HOLD);
+}
+
 // coin reward: the coins.svg pile magically appears on the counter in front of the
 // served customer, holds ~2 seconds, then fades out smoothly.
 function rewardCoins(fromEl) {
@@ -3906,16 +3949,15 @@ function rewardCoins(fromEl) {
   pile.style.display = 'block';
   void pile.offsetWidth;
   pile.classList.add('landIn');                     // magical materialise
-  // coin sfx fires EXACTLY as the pile appears (not at drop time ~1s earlier)
-  try { serveSound.currentTime = 0; serveSound.play().catch(() => {}); } catch (e) {}
+  playCoinSfx();                                    // sfx starts on this frame and ends with the pile
   pile._hold = setTimeout(() => {                   // hold ~0.9 seconds…
     pile.classList.remove('landIn');
     pile.classList.add('fadeOut');                  // …then smooth magical fade-out (no sfx)
     pile._gone = setTimeout(() => {
       pile.style.display = 'none'; pile.classList.remove('fadeOut');
       showMachineGlass();                           // coins gone → a fresh glass appears in the machine
-    }, 720);
-  }, 900);
+    }, COIN.FADE + 20);
+  }, COIN.HOLD);
 }
 
 // the delivered drink flies up to the customer's mouth, tilts to "drink", then vanishes
