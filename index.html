@@ -211,7 +211,16 @@ body {
   100% { transform: translateX(0)    rotate(0deg); opacity: 1; }
 }
 
-/* ── dragon's speech bubble (CSS-drawn so it sizes cleanly to any text) ── */
+/* ── dragon's speech bubble ───────────────────────────────────────
+   Shape follows `new assets/Union.svg`: a softly rounded cream capsule with an orange rim.
+   That reference body is 552.66 × 164.67 with a 56 corner radius — 34% of its height — so the
+   radius below is 2cqw, ≈35% of a one-line bubble, which lands on the same roundness.
+   It stays CSS-drawn rather than using the SVG as a background image. The box hugs its text
+   (width: max-content) and grows a line at a time, and any artwork stretched to that changing
+   size would distort precisely the corners and rim the reference is defined by. A border-radius
+   cannot stretch: the corners stay true at every size and every line count, and the padding
+   stays equal on all four sides. Fill and rim colours are taken straight from the file.
+   Position, size rules, padding, font, text styling, the tail and the animations are unchanged. */
 #dragonBubble {
   position: absolute;
   left: 86.83%;                /* anchored by centre so the bubble stays put as text changes */
@@ -222,9 +231,9 @@ body {
               top  0.9s cubic-bezier(0.45, 0.05, 0.55, 0.95);
   width: max-content;          /* hug the text … */
   max-width: 19%;              /* … up to a sensible cap, then wrap onto more lines */
-  background: #fbe9cf;         /* peach fill */
-  border: 0.5cqw solid #FE9200; /* thicker orange outline */
-  border-radius: 1.1cqw;
+  background: #FEF3DD;         /* cream fill — Union.svg */
+  border: 0.5cqw solid #FF8701; /* orange rim — Union.svg (weight unchanged) */
+  border-radius: 2cqw;         /* the reference's 34%-of-height corner */
   filter: drop-shadow(0 8px 16px rgba(0,0,0,0.3));
   display: none;
   align-items: center;
@@ -254,11 +263,12 @@ body {
   width: 0; height: 0;
   border: 0.95cqw solid transparent;
 }
-#dragonBubble::before { transform: translateX(-50%);              border-top-color: #FE9200; }
-#dragonBubble::after  { transform: translateX(-50%) translateY(-0.3cqw); border-width: 0.72cqw; border-top-color: #fbe9cf; }
+/* same tail, same spot — only its two colours follow the box's new fill and rim */
+#dragonBubble::before { transform: translateX(-50%);              border-top-color: #FF8701; }
+#dragonBubble::after  { transform: translateX(-50%) translateY(-0.3cqw); border-width: 0.72cqw; border-top-color: #FEF3DD; }
 #dragonText.typing::after {
   content: '|';
-  color: #fbe9cf;
+  color: #FEF3DD;              /* matches the fill → reserves the caret's width, stays invisible */
   animation: caretBlink 0.6s step-end infinite;
 }
 /* the not-yet-typed tail stays in the layout (just invisible) so the bubble
@@ -1717,42 +1727,79 @@ const coinsGoneSound = regAudio('sxf/coins disappers.ogg');
 const transitionSound = regAudio('sxf/transation.ogg');
 transitionSound.volume = 0.7;
 
-// ── "Ready, Set, Serve" sting ─────────────────────────────────
-// ONE playback per game session, and it belongs to the START TRANSITION: it fires from the
-// Play tap inside leaveTitle(), as the title hands over to gameplay.
-// playTitleSting() is the ONLY thing that ever starts this clip, and it latches itself off
-// afterwards. There is deliberately NO document-level pointerdown listener, no preloader
-// reveal call and no focus/visibility hook — those were the stray triggers that replayed the
-// sting on an unrelated click or after a refresh, and each of them could also restart the clip
-// while it was already running.
-// Firing on the tap is also what makes it reliable: a tap is a real user gesture, the one
-// moment a browser is guaranteed to allow playback, so autoplay policy can never swallow it.
-const TITLE_MUSIC_SRC = 'audio/ready set serve.ogg';
-const TITLE_MUSIC_VOL = 0.85;
+// ── title-screen audio (plays on the thumbnail; stops when Play is tapped) ──
+// 'ready set serve.ogg' is a ~2.5s title sting, so it plays ONCE rather than looping.
+// Set TITLE_MUSIC_LOOP = true if you swap in a track built to loop seamlessly.
+const TITLE_MUSIC_SRC  = 'audio/ready set serve.ogg';
+const TITLE_MUSIC_LOOP = false;
+const TITLE_MUSIC_VOL  = 0.85;
 // routed through regAudio so the boot preloader streams it and hands it a blob: URL
 const titleMusic = TITLE_MUSIC_SRC ? regAudio(TITLE_MUSIC_SRC) : null;
-if (titleMusic) { titleMusic.loop = false; titleMusic.volume = TITLE_MUSIC_VOL; }  // a sting, never a loop
-let titleStingUsed = false;          // latched once it has had its playback this game session
-function playTitleSting() {
-  if (!titleMusic || titleStingUsed) return;   // already played → stay silent for the session
-  titleStingUsed = true;                       // latch FIRST, so nothing can double-trigger it
+if (titleMusic) { titleMusic.loop = TITLE_MUSIC_LOOP; titleMusic.volume = TITLE_MUSIC_VOL; }
+// play() is ASYNCHRONOUS. The element is preload='none' with a blob: src, so a play()
+// started on the title can still be resolving when Play is tapped — pausing in between is
+// not enough on its own, the clip gets a few audible frames once the promise lands. So we
+// track the in-flight promise and re-kill on resolve, and latch `titleMusicOff` so nothing
+// can start it again until we deliberately go back to the title screen.
+let titlePlayPromise = null;
+let titleMusicOff    = false;
+function playTitleMusic() {
+  if (!titleMusic || titleDone || titleMusicOff) return;       // game started (Play tapped) — stay off
   try {
-    titleMusic.volume = TITLE_MUSIC_VOL;
-    // play() FIRST, rewind separately: the element is preload='none' with a blob: src, so
-    // while its readyState is HAVE_NOTHING assigning currentTime throws InvalidStateError —
-    // in one try block that swallowed the play() call and no sound came out at all.
+    titleMusic.volume = TITLE_MUSIC_VOL;                       // undo the mute stopTitleMusic() applies
+    // play() FIRST, rewind separately: while readyState is HAVE_NOTHING, assigning
+    // currentTime throws InvalidStateError, and in one try block that skipped play() outright.
     const p = titleMusic.play();
-    if (p && p.catch) p.catch(() => {});
+    if (p && p.then) {
+      titlePlayPromise = p;
+      p.then(() => {
+        titlePlayPromise = null;
+        // Play was tapped while this play() was in flight → the clip is starting now. Kill it.
+        if (titleDone || titleMusicOff) stopTitleMusic();
+      }).catch(() => { titlePlayPromise = null; });
+    }
   } catch (e) {}
   try { if (titleMusic.currentTime > 0.05) titleMusic.currentTime = 0; } catch (e) {}
 }
-function stopTitleSting() {
+function stopTitleMusic() {
   if (!titleMusic) return;
-  try { titleMusic.pause(); titleMusic.currentTime = 0; } catch (e) {}
+  try { titleMusic.pause(); } catch (e) {}
+  try { titleMusic.volume = 0; } catch (e) {}   // silent even if the browser resumes a pending play()
+  try { titleMusic.currentTime = 0; } catch (e) {}
+  // a play() still resolving would un-pause us a tick later — pause it again when it lands
+  if (titlePlayPromise && titlePlayPromise.then) {
+    titlePlayPromise.then(() => {
+      try { titleMusic.pause(); titleMusic.currentTime = 0; } catch (e) {}
+    }).catch(() => {});
+  }
 }
-// Only a deliberately-started NEW game session re-arms it (returning to the title screen and
-// tapping Play again). Nothing else — no click, no focus change — can.
-function armTitleSting() { titleStingUsed = false; }
+// Leaving the title for good: stop, and latch it off so no stray handler can restart it.
+function killTitleMusic() {
+  titleMusicOff = true;
+  stopTitleMusic();
+}
+// Coming back to the title screen (restart / dev jump): unlatch, then start it again.
+function restartTitleMusic() {
+  titleMusicOff = false;
+  playTitleMusic();
+}
+// The sting fires when the title is actually ready — i.e. when the preloader reveals the
+// Play button (see reveal() in bootPreload), not at 0% while the bar is still filling.
+// If the browser blocks autoplay, the first interaction starts it instead — but NOT the
+// Play tap itself: starting the clip on that pointerdown only to stop it on the click
+// milliseconds later is exactly the overlap blip we are fixing.
+function titleGestureStart(e) {
+  if (e && e.target && e.target.closest && e.target.closest('#playBtn')) return;
+  document.removeEventListener('pointerdown', titleGestureStart);
+  playTitleMusic();
+}
+document.addEventListener('pointerdown', titleGestureStart);
+// …and kill it on the POINTERDOWN of the Play tap — one frame earlier than the click that
+// runs leaveTitle(), so the title clip is already down before the screen swaps.
+(() => {
+  const pb = document.getElementById('playBtn');
+  if (pb) pb.addEventListener('pointerdown', () => { if (assetsReady) killTitleMusic(); });
+})();
 
 // ── gameplay music (starts when Play is tapped; loops through the game) ──
 const gameMusic = regAudio('sxf/an sfx.ogg');
@@ -2535,9 +2582,9 @@ function leaveTitle() {
   if (!assetsReady) return;        // still preloading â€” the button is hidden, but this also
                                    // blocks keyboard / programmatic / dev starts
   titleDone = true;
-  playTitleSting();                // "Ready, Set, Serve" — its one playback, on the tap itself
+  killTitleMusic();                // Play tapped → title music off (and latched off)…
   popSound();                      // pop on the start button
-  playGameMusic();                 // …and the gameplay music comes up underneath it
+  playGameMusic();                 // …and the gameplay music starts, with nothing under it
   const t = document.getElementById('title');
   t.style.display = 'none';        // no shutter — go straight into the game
   startTutorialIntro();
@@ -4133,9 +4180,7 @@ function restartGame() {
   // no "Play Again" button — the title always shows the standard Play button
   const pb = document.getElementById('playBtn');
   if (pb) { pb.src = 'assets map/start-button.webp'; pb.alt = 'Play'; pb.classList.remove('again'); }
-  // back on the thumbnail: gameplay music off, and the sting re-armed for the NEXT Play tap
-  // (a new game session) — nothing plays here on the title screen itself
-  stopGameMusic(); stopTitleSting(); armTitleSting();
+  stopGameMusic(); restartTitleMusic();   // back on the thumbnail → gameplay music off, title music on
   initRound();
 }
 
@@ -4203,7 +4248,7 @@ document.addEventListener('pointerdown', (e) => {
   }
 });
 function devResetScene() {
-  stopTitleSting();          // any dev jump leaves the title → the sting must not linger
+  killTitleMusic();          // any dev jump leaves the title → title clip must not linger
   clearVoiceQueue();
   hideHand();
   if (typeof hideDragGhost === 'function') hideDragGhost();
@@ -4243,7 +4288,7 @@ function devGoToTitle() {
   if (dragonEl) { dragonEl.classList.remove('exitRight'); dragonEl.style.display = ''; dragonEl.style.visibility = ''; }
   const t = document.getElementById('title');
   if (t) { t.style.display = ''; t.classList.remove('leaving'); }
-  stopGameMusic(); stopTitleSting(); armTitleSting();  // dev: back on the thumbnail → sting re-armed
+  stopGameMusic(); restartTitleMusic(); // back on the thumbnail → gameplay music off, title music on
   initRound();
 }
 // jump straight to the game-over / end screen (replays the board drop-in each time)
@@ -4590,9 +4635,7 @@ function bootPreload() {
     setTimeout(() => {
       if (wrap) wrap.classList.add('done');
       if (btn)  btn.classList.add('ready');             // pop-in
-      // (the sting is NOT fired here. It belongs to the start transition and plays from the
-      //  Play tap — see playTitleSting(). Starting it at the reveal is what made it replay on
-      //  a later click, and autoplay policy blocked it here anyway with no gesture yet.)
+      playTitleMusic();                                 // title sting, in sync with the reveal
       setTimeout(() => { if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap); }, 500);
     }, 220);
   }
@@ -4686,10 +4729,6 @@ function holdAudio() {
   AUDIO_REG.forEach(entry => {
     const a = entry.el;
     if (!a || a.paused || a.ended) return;
-    // The title sting is tied to the start transition: if the tab goes away mid-sting its
-    // moment has passed, so it is stopped and NOT remembered. Resuming it on a Resume tap
-    // would play its tail into gameplay — the "audio comes back on a focus change" bug.
-    if (a === titleMusic) { try { a.pause(); } catch (e) {} return; }
     audioHeld.push(a);
     try { a.pause(); } catch (e) {}
   });
