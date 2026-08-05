@@ -31,6 +31,22 @@ body {
   min-height: 100vh;
   overflow: hidden;
   font-family: 'Poppins', 'Segoe UI', system-ui, sans-serif;
+  /* mobile hardening, all of it inert on desktop:
+     • overscroll-behavior — no pull-to-refresh or rubber-band drag while dragging a glass
+     • touch-action: manipulation — kills the double-tap-to-zoom that iOS Safari still allows
+       even with user-scalable=no (it ignores that flag). The two drag surfaces override this
+       with `none`, which is more specific, so dragging is unaffected.
+     • tap-highlight — removes the grey flash iOS paints over a tapped button */
+  overscroll-behavior: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+/* Mobile browser chrome makes 100vh LARGER than the visible area (it measures the viewport
+   with the toolbar retracted), so on a phone the board's bottom — the counter, the tray, the
+   POUR button — sat under the toolbar. dvh tracks the area that is actually visible.
+   Declared after the vh rules above so browsers without dvh keep exactly what they had. */
+@supports (height: 100dvh) {
+  body { min-height: 100dvh; }
 }
 
 /* ── canvas (16:9, design space 1920×1080) ── */
@@ -43,11 +59,28 @@ body {
   aspect-ratio: 16 / 9;
   overflow: hidden;
   user-select: none;
+  /* touch: the board itself must not pan or zoom under a finger (the drag surfaces set their
+     own `none`; this stops a stray swipe on the counter from scrolling the page instead) */
+  touch-action: manipulation;
   /* make the board a query container so every inner size that uses `cqw`
      scales with the BOARD width, not the viewport width. This keeps the whole
      layout consistent on ultra-wide, short-landscape and pillarboxed screens
      where the board no longer spans the full viewport width. */
   container-type: inline-size;
+}
+/* Same board, measured against the SAFE area instead of the raw viewport: dvh for the mobile
+   toolbar, and env(safe-area-inset-*) so a notch, a rounded corner or the home indicator can
+   never sit over the board (the page opts into the full screen with viewport-fit=cover, so
+   without this the insets are ours to lose). Both units are gated behind @supports, and this
+   block only ever SHRINKS the board — on any browser or device without notches the maths
+   resolves to the same numbers as the plain vw/vh rules above. */
+@supports (width: 100dvw) and (padding: env(safe-area-inset-left)) {
+  #gc {
+    --safe-w: calc(100dvw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
+    --safe-h: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    width:  min(var(--safe-w), calc(var(--safe-h) * 16 / 9));
+    height: min(calc(var(--safe-w) * 9 / 16), var(--safe-h));
+  }
 }
 
 /* ── rotate-to-landscape prompt (shown on portrait screens; the game is 16:9) ── */
@@ -1472,12 +1505,43 @@ const ASSET_BYTES = {
 // the preloader streams the bytes once and hands each element a blob: URL, so there is
 // never a double download.
 const AUDIO_REG = [];
+// ── media format pick (Safari) ────────────────────────────────
+// Every sound ships as Ogg Vorbis and the end video as WebM. Safari only learned to play Ogg
+// in version 17, and WebM support there is patchy — so on Safari 15/16 the entire game was
+// silent and the celebration video blank. Each file now has an AAC (.m4a) / H.264 (.mp4)
+// sibling, and the format is chosen ONCE, here, from what the browser says it can play.
+// Only the chosen set is ever requested: the preloader fetches exactly as many files as
+// before, so loading time is unchanged. Chrome, Edge and Firefox all report Ogg/WebM and
+// therefore keep using the originals — byte-for-byte the same behaviour as today.
+const MEDIA = (() => {
+  const a = document.createElement('audio'), v = document.createElement('video');
+  const can = (el, t) => !!(el.canPlayType && el.canPlayType(t));
+  return {
+    audio: can(a, 'audio/ogg; codecs="vorbis"') ? '.ogg' : '.m4a',
+    video: (can(v, 'video/webm; codecs="vp9"') || can(v, 'video/webm; codecs="vp8, vorbis"')) ? '.webm' : '.mp4'
+  };
+})();
+function mediaSrc(src) {
+  return src.replace(/\.ogg$/i, MEDIA.audio).replace(/\.webm$/i, MEDIA.video);
+}
 function regAudio(src) {
+  src = mediaSrc(src);                     // .ogg → .m4a where Ogg is not supported
   const a = new Audio(src);
   a.preload = 'none';
   AUDIO_REG.push({ el: a, src: src });
   return a;
 }
+// the end video's <source> follows the same pick, before the preloader reads it. The type
+// attribute has to move with the src — left saying video/webm, the browser would reject the
+// mp4 it was just handed.
+(() => {
+  const s = document.querySelector('#endVideo source');
+  if (!s) return;
+  const want = mediaSrc(s.getAttribute('src') || '');
+  if (!want || want === s.getAttribute('src')) return;
+  s.setAttribute('src', want);
+  s.setAttribute('type', /\.mp4$/i.test(want) ? 'video/mp4' : 'video/webm');
+})();
 // set true by bootPreload() once everything is in; leaveTitle() refuses to start before then
 let assetsReady = false;
 
@@ -1657,9 +1721,18 @@ function cancelPourNudge() {
 }
 // ANY activity (mouse move, click, touch) dismisses an idle nudge and restarts the ~11s
 // inactivity window, so the hint returns only after the player goes idle again.
+let lastNudgeArm = -1e9;
 function noteIdleActivity() {
-  if (idleHandShown) { hideHand(); hideGlassGhost(); idleHandShown = false; }
-  if (phase === 'play' && !tutorial) armPourNudge();
+  if (idleHandShown) { hideHand(); hideGlassGhost(); idleHandShown = false; }   // always immediate
+  if (phase !== 'play' || tutorial) return;
+  // pointermove fires up to ~120×/second, and each call was clearing and re-creating the idle
+  // timer — a timer allocation per mouse-move event, for no benefit. 200ms of granularity is
+  // invisible against an 11-second idle window: hold the mouse still and the nudge still
+  // arrives on time, keep moving and it still never fires.
+  const now = performance.now();
+  if (now - lastNudgeArm < 200) return;
+  lastNudgeArm = now;
+  armPourNudge();
 }
 document.addEventListener('pointerdown', noteIdleActivity, true);
 document.addEventListener('pointermove', noteIdleActivity, { capture: true, passive: true });
@@ -3263,18 +3336,40 @@ function onGlassDown(e) {
   glassEl.style.transition = 'none';
   glassDragSX = e.clientX; glassDragSY = e.clientY;
   try { glassEl.setPointerCapture(e.pointerId); } catch (err) {}
-  glassEl.addEventListener('pointermove', onGlassMove);
-  glassEl.addEventListener('pointerup', onGlassUp);
+  // The move/up pair goes on WINDOW, not on the glass. setPointerCapture is wrapped in a
+  // try/catch because it has historically failed on SVG elements in Safari, and without
+  // capture an element-bound listener stops firing the moment the finger leaves the glass —
+  // the drag would freeze mid-air. Window-bound listeners work with or without capture, on
+  // every engine. pointercancel is bound too: on touch the OS can take the pointer away
+  // (system gesture, second finger, tab switch) and then pointerup NEVER arrives, which used
+  // to leave the glass stranded and glassDragActive stuck true — a soft-lock.
+  addDragListeners(window, onGlassMove, onGlassUp, onGlassCancel);
+}
+function addDragListeners(t, move, up, cancel) {
+  t.addEventListener('pointermove', move);
+  t.addEventListener('pointerup', up);
+  t.addEventListener('pointercancel', cancel);
+}
+function removeDragListeners(t, move, up, cancel) {
+  t.removeEventListener('pointermove', move);
+  t.removeEventListener('pointerup', up);
+  t.removeEventListener('pointercancel', cancel);
 }
 function onGlassMove(e) {
   if (!glassDragActive) return;
   glassEl.style.transform = `translate(${e.clientX - glassDragSX}px, ${e.clientY - glassDragSY}px)`;
 }
+// pointer taken away mid-drag → hand the glass back exactly like a release off the tray
+function onGlassCancel() {
+  if (!glassDragActive) return;
+  glassDragActive = false;
+  removeDragListeners(window, onGlassMove, onGlassUp, onGlassCancel);
+  snapGlassHome();
+}
 function onGlassUp(e) {
   if (!glassDragActive) return;
   glassDragActive = false;
-  glassEl.removeEventListener('pointermove', onGlassMove);
-  glassEl.removeEventListener('pointerup', onGlassUp);
+  removeDragListeners(window, onGlassMove, onGlassUp, onGlassCancel);
 
   const dx = e.clientX - glassDragSX, dy = e.clientY - glassDragSY;
   const gr = gcEl.getBoundingClientRect();
@@ -3402,20 +3497,29 @@ function onServeDown(e) {
   servedSet.style.transition = 'none';
   dragStartX = e.clientX; dragStartY = e.clientY;
   try { servedSet.setPointerCapture(e.pointerId); } catch (err) {}
-  servedSet.addEventListener('pointermove', onServeMove);
-  servedSet.addEventListener('pointerup', onServeUp);
+  addDragListeners(window, onServeMove, onServeUp, onServeCancel);   // see onGlassDown
 }
 
 function onServeMove(e) {
   if (!dragActive) return;
   servedSet.style.transform = `translate(${e.clientX - dragStartX}px, ${e.clientY - dragStartY}px)`;
 }
+// pointer taken away mid-drag (system gesture, second finger, tab switch) → settle the drink
+// back onto the tray instead of leaving it stranded with dragActive stuck true
+function onServeCancel() {
+  if (!dragActive) return;
+  dragActive = false;
+  removeDragListeners(window, onServeMove, onServeUp, onServeCancel);
+  if (!servedSet) return;
+  servedSet.style.transition = 'transform 0.3s ease';
+  servedSet.style.transform = 'translate(0,0)';
+  servedSet.classList.add('hintBob');
+}
 
 function onServeUp(e) {
   if (!dragActive) return;
   dragActive = false;
-  servedSet.removeEventListener('pointermove', onServeMove);
-  servedSet.removeEventListener('pointerup', onServeUp);
+  removeDragListeners(window, onServeMove, onServeUp, onServeCancel);
 
   if (pairMode) { dropOnPair(e); return; }
 
@@ -4467,7 +4571,14 @@ function bootPreload() {
   const vsrcEl = vid ? vid.querySelector('source') : null;
   if (vsrcEl) jobs.push({ src: vsrcEl.getAttribute('src'), kind: 'video', el: vid, srcEl: vsrcEl });
 
-  jobs.forEach(j => { j.weight = ASSET_BYTES[j.src] || 40000; j.got = 0; });
+  // ASSET_BYTES is keyed by the original .ogg/.webm names, so fall back to those when the
+  // AAC/H.264 siblings are in play (each fetch's Content-Length refines the weight anyway)
+  jobs.forEach(j => {
+    j.weight = ASSET_BYTES[j.src]
+            || ASSET_BYTES[j.src.replace(/\.m4a$/i, '.ogg').replace(/\.mp4$/i, '.webm')]
+            || 40000;
+    j.got = 0;
+  });
   jobs.sort((a, b) => a.weight - b.weight);            // smallest first
   let total = jobs.reduce((s, j) => s + j.weight, 0) || 1;
 
@@ -4598,22 +4709,11 @@ function releaseAudio() {
   list.forEach(a => { try { const p = a.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {} });
 }
 // A drag in flight when the tab goes away can never get its pointerup — the pointer is
-// released somewhere else entirely — which would strand the glass mid-air. Hand it back the
-// same way an off-target release does, using the existing paths.
+// released somewhere else entirely — which would strand the glass mid-air. The pointercancel
+// handlers do exactly this, so reuse them rather than repeating the teardown.
 function cancelActiveDrags() {
-  if (glassDragActive) {
-    glassDragActive = false;
-    glassEl.removeEventListener('pointermove', onGlassMove);
-    glassEl.removeEventListener('pointerup', onGlassUp);
-    snapGlassHome();                                 // glides home, as on a release off the tray
-  }
-  if (dragActive && servedSet) {
-    dragActive = false;
-    servedSet.removeEventListener('pointermove', onServeMove);
-    servedSet.removeEventListener('pointerup', onServeUp);
-    servedSet.style.transition = 'transform 0.3s ease';
-    servedSet.style.transform  = 'translate(0,0)';   // settles back onto the tray
-  }
+  onGlassCancel();
+  onServeCancel();
 }
 function pauseGame() {
   if (gamePaused) return;
