@@ -1759,23 +1759,24 @@ transitionSound.volume = 0.7;
 // Fires when LOADING REACHES 100% — the moment the bar fills and the Play button pops in
 // (see reveal() in bootPreload) — and gets exactly ONE playback per page session.
 //
-// There is deliberately NO document-wide pointerdown listener any more. That listener was
-// what made the line play "when I tap": at 100% there has been no user gesture yet, so the
-// browser's autoplay policy usually blocks the reveal call, and the listener then delivered
-// the VO on whatever the player happened to touch first (the title art, the background…).
+// ONE attempt per page session, at that moment, and nothing else ever starts this clip:
+// no document-wide listener, no Play-tap fallback, no focus or visibility hook.
 //
-// Autoplay policy can still refuse the reveal call, and nothing in JS can override that. So
-// there is one — and only one — fallback: if the reveal attempt is rejected, the latch is
-// handed back and the Play tap delivers the line instead (a tap is a real user gesture, the
-// one moment playback is guaranteed). No stray click can ever trigger it.
+// Browsers only permit audio to start without a user gesture once the site has built up media
+// engagement, which a developer's localhost has and a fresh phone does not. Nothing in JS can
+// override that. So where the browser refuses the call, the VO is SKIPPED for the session:
+// the latch deliberately stays down. Delivering it later would mean delivering it on the Play
+// tap — the wrong moment, and the behaviour this replaced.
+// The trade-off is explicit: the title is announced wherever autoplay is allowed, and silent
+// where it is not, but the line can never arrive after the title has been left.
 const TITLE_MUSIC_SRC = 'audio/ready set serve.ogg';
 const TITLE_MUSIC_VOL = 0.85;
 // routed through regAudio so the boot preloader streams it and hands it a blob: URL
 const titleMusic = TITLE_MUSIC_SRC ? regAudio(TITLE_MUSIC_SRC) : null;
 if (titleMusic) { titleMusic.loop = false; titleMusic.volume = TITLE_MUSIC_VOL; }  // a VO, never a loop
-let titleStingUsed = false;      // latched as soon as a playback is attempted
+let titleStingUsed = false;      // latched by the single attempt — whether it played or was refused
 function playTitleSting() {
-  if (!titleMusic || titleStingUsed) return;   // already had its one playback → stay silent
+  if (!titleMusic || titleStingUsed) return;   // the one attempt has been made → stay silent
   titleStingUsed = true;                       // latch FIRST, so nothing can double-trigger it
   if (titleMusic._fade) { clearInterval(titleMusic._fade); titleMusic._fade = null; }
   try {
@@ -1784,11 +1785,10 @@ function playTitleSting() {
     // while its readyState is HAVE_NOTHING assigning currentTime throws InvalidStateError —
     // in one try block that swallowed the play() call and no sound came out at all.
     const p = titleMusic.play();
-    if (p && p.catch) p.catch(() => {
-      // blocked (no gesture yet) → give the latch back so the Play tap can still deliver it
-      titleStingUsed = false;
-    });
-  } catch (e) { titleStingUsed = false; }
+    // Refused by autoplay policy → swallow it and leave the latch DOWN. The VO is skipped for
+    // this session rather than surfacing later on the Play tap.
+    if (p && p.catch) p.catch(() => {});
+  } catch (e) {}
   try { if (titleMusic.currentTime > 0.05) titleMusic.currentTime = 0; } catch (e) {}
 }
 // Leaving the title while the VO is still running: ~180ms fade rather than a cut mid-word,
@@ -2591,10 +2591,11 @@ function leaveTitle() {
   if (!assetsReady) return;        // still preloading â€” the button is hidden, but this also
                                    // blocks keyboard / programmatic / dev starts
   titleDone = true;
-  // The VO belongs to the loading screen. If it already played there, fade it out so it does
-  // not run under the gameplay music; if autoplay policy blocked it, this tap — a real user
-  // gesture — is the one fallback that still delivers the line.
-  if (titleStingUsed) stopTitleSting(); else playTitleSting();
+  // The VO belongs to the loading screen. Whatever happened there — played, or refused by
+  // autoplay policy and skipped — this tap must never START it. It only ever fades out a
+  // playback still in progress, so the line does not run on under the gameplay music.
+  titleStingUsed = true;           // and it can never be started after this point
+  stopTitleSting();
   popSound();                      // pop on the start button
   playGameMusic();                 // …and the gameplay music starts, with nothing under it
   const t = document.getElementById('title');
