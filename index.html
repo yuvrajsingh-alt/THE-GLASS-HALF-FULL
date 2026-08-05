@@ -845,6 +845,26 @@ body {
 /* (#nextBtn and its startPulse keyframes removed — no matching markup or JS) */
 
 /* ── game-over screen (after the full customer cycle: 5 half + 5 full) ── */
+/* ── end-of-game wipe: gameplay → dark → celebration ─────────────
+   The board used to be replaced by the end screen inside a single frame. This veil covers that
+   swap: it fades UP over the finished gameplay, the end screen is put in place beneath it while
+   nothing can be seen, then it fades back DOWN to reveal it. Two 0.45s halves, ~0.9s in all.
+   It is painted in the game's own background tones, so there is no white flash and never a
+   blank frame — something is always on screen — and the video only starts once it has cleared.
+   Opacity animations only: no display flip mid-fade, nothing to flicker. */
+#endWipe {
+  position: absolute; inset: 0;
+  z-index: 88;                 /* over the end screen (z60) and the splash wipe (z85) */
+  background: radial-gradient(circle at 50% 45%, #2a0f3a 0%, #15071f 72%);
+  display: none;
+  opacity: 0;
+  pointer-events: none;
+}
+#endWipe.in  { display: block; animation: endWipeIn  0.45s ease-in  both; }
+#endWipe.out { display: block; animation: endWipeOut 0.45s ease-out both; }
+@keyframes endWipeIn  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes endWipeOut { from { opacity: 1; } to { opacity: 0; } }
+
 #gameEnd {
   position: absolute; inset: 0;
   z-index: 60;
@@ -1317,6 +1337,9 @@ body {
       </svg>
     </div>
   </div>
+
+  <!-- ── end-of-game wipe (covers the swap from gameplay to the celebration) ── -->
+  <div id="endWipe" aria-hidden="true"></div>
 
   <!-- ── pause screen (auto-shown when the tab goes inactive; resume is manual) ── -->
   <div id="pauseScreen" aria-hidden="true">
@@ -4110,6 +4133,7 @@ const CONFETTI_COLORS = ['#FF7ED8', '#CE9EFF', '#FFD84D', '#7FE0FF', '#FF9E5A', 
 let confettiTimer = null;
 let endWatchdog = null;      // safety net that freezes the end video if 'ended' never fires
 let endFrozen = false;       // true once the end video is parked on its final frame
+const END_WIPE_MS = 450;     // each half of the end wipe — keep in sync with #endWipe's animations
 function makeConfettiPiece() {
   const box = document.getElementById('confetti');
   if (!box) return;
@@ -4149,13 +4173,12 @@ function endGame() {
   if (bannerEl) bannerEl.classList.remove('show');
   clearServed();
   LANES.forEach(l => { l.el.style.display = 'none'; const b = document.getElementById(l.bubbleId); if (b) b.classList.remove('show'); });
-  const end = document.getElementById('gameEnd');
-  if (end) end.classList.add('show');
-  startConfetti();                                   // celebratory confetti over the video
-
   // Play the celebration video ONCE and hold it on its final frame. It used to jump straight
   // back to the title when 'ended' fired; now the last frame stays on screen as the completion
   // card and waits for a tap (see the #gameEnd handler under restartGame).
+  // Runs at the END of the wipe below — never straight off the last serve.
+  function startCelebration() {
+  startConfetti();                                   // celebratory confetti over the video
   stopGameMusic();                                   // the video has its own audio
   const v = document.getElementById('endVideo');
   endFrozen = false;
@@ -4197,6 +4220,36 @@ function endGame() {
   } else {
     setTimeout(restartGame, 1500);
   }
+  }  // ── end startCelebration ──
+
+  // ── the wipe: gameplay → dark → celebration ──
+  // 1. fade the finished board down into the game's dark tone (0.45s)
+  // 2. at full cover, put the end screen in place. Nothing visible changes: the veil hides the
+  //    swap entirely, and the backdrop plus the video's first frame are ready underneath, so
+  //    the reveal has real pixels from its very first frame — no black gap, no flicker.
+  // 3. fade back up (0.45s) and only THEN start playback, so the video is never running behind
+  //    the veil and its audio still begins exactly with its first visible frame.
+  const end = document.getElementById('gameEnd');
+  const wipe = document.getElementById('endWipe');
+  const swapUnderCover = () => {
+    if (end) end.classList.add('show');
+    if (wipe) {
+      wipe.classList.remove('in');
+      wipe.classList.add('out');
+      setTimeout(() => wipe.classList.remove('out'), END_WIPE_MS);
+      setTimeout(startCelebration, END_WIPE_MS);     // veil gone → celebration begins
+    } else {
+      startCelebration();
+    }
+  };
+  if (wipe) {
+    wipe.classList.remove('out');
+    void wipe.offsetWidth;                           // replay the fade on a second playthrough
+    wipe.classList.add('in');
+    setTimeout(swapUnderCover, END_WIPE_MS);
+  } else {
+    swapUnderCover();                                // element missing → exactly the old behaviour
+  }
 }
 
 // video finished (or Play Again) → full restart from the title screen
@@ -4204,6 +4257,8 @@ function restartGame() {
   if (endWatchdog) { clearTimeout(endWatchdog); endWatchdog = null; }   // leaving the end screen
   endFrozen = false;
   const end = document.getElementById('gameEnd'); if (end) end.classList.remove('show');
+  const wipe = document.getElementById('endWipe');  // clear the veil in case a restart interrupts it
+  if (wipe) wipe.classList.remove('in', 'out');
   stopConfetti();
   const v = document.getElementById('endVideo');
   if (v) { v.onended = null; try { v.pause(); } catch (e) {} }
