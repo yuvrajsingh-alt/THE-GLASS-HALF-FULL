@@ -245,7 +245,8 @@ body {
 }
 
 /* ── dragon's speech bubble ───────────────────────────────────────
-   Shape follows `new assets/Union.svg`: a softly rounded cream capsule with an orange rim.
+   Shape follows the Union.svg reference (design source, not shipped): a softly rounded cream
+   capsule with an orange rim.
    That reference body is 552.66 × 164.67 with a 56 corner radius — 34% of its height — so the
    radius below is 2cqw, ≈35% of a one-line bubble, which lands on the same roundness.
    It stays CSS-drawn rather than using the SVG as a background image. The box hugs its text
@@ -1514,15 +1515,12 @@ const AUDIO_REG = [];
 // before, so loading time is unchanged. Chrome, Edge and Firefox all report Ogg/WebM and
 // therefore keep using the originals — byte-for-byte the same behaviour as today.
 const MEDIA = (() => {
-  const a = document.createElement('audio'), v = document.createElement('video');
+  const a = document.createElement('audio');
   const can = (el, t) => !!(el.canPlayType && el.canPlayType(t));
-  return {
-    audio: can(a, 'audio/ogg; codecs="vorbis"') ? '.ogg' : '.m4a',
-    video: (can(v, 'video/webm; codecs="vp9"') || can(v, 'video/webm; codecs="vp8, vorbis"')) ? '.webm' : '.mp4'
-  };
+  return { audio: can(a, 'audio/ogg; codecs="vorbis"') ? '.ogg' : '.m4a' };
 })();
 function mediaSrc(src) {
-  return src.replace(/\.ogg$/i, MEDIA.audio).replace(/\.webm$/i, MEDIA.video);
+  return src.replace(/\.ogg$/i, MEDIA.audio);
 }
 function regAudio(src) {
   src = mediaSrc(src);                     // .ogg → .m4a where Ogg is not supported
@@ -1531,17 +1529,10 @@ function regAudio(src) {
   AUDIO_REG.push({ el: a, src: src });
   return a;
 }
-// the end video's <source> follows the same pick, before the preloader reads it. The type
-// attribute has to move with the src — left saying video/webm, the browser would reject the
-// mp4 it was just handed.
-(() => {
-  const s = document.querySelector('#endVideo source');
-  if (!s) return;
-  const want = mediaSrc(s.getAttribute('src') || '');
-  if (!want || want === s.getAttribute('src')) return;
-  s.setAttribute('src', want);
-  s.setAttribute('type', /\.mp4$/i.test(want) ? 'video/mp4' : 'video/webm');
-})();
+// (The end video ships as WebM only — the H.264 .mp4 sibling was removed on request, so there
+//  is no video format to pick and the <source> in the markup is used as written. A browser that
+//  cannot play VP9/WebM now falls back to #endBg, the still backdrop, and the end screen's own
+//  timers still carry the flow: onerror → restartGame keeps the game escapable.)
 // set true by bootPreload() once everything is in; leaveTitle() refuses to start before then
 let assetsReady = false;
 
